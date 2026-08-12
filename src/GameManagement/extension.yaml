@@ -5,5 +5,5 @@ Links:
   Url: https://github.com/erri120/Playnite.Extensions
 Module: GameManagement.dll
 Name: Game Management Plugin
-Type: LibraryPlugin   # <-- ALTERADO de GenericPlugin para LibraryPlugin
-Version: 2.6.0
+Type: LibraryPlugin
+Version: 2.6.1

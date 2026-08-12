@@ -1,10 +1,10 @@
-﻿Id: F95ZoneMetadata
-Name: F95zone Metadata Provider
 Author: erri120
-Version: 2.0.0
-Module: F95ZoneMetadata.dll
-Type: MetadataProvider
 Icon: icon.png
+Id: F95ZoneMetadata
 Links:
-    - Name: GitHub
-      Url: https://github.com/erri120/Playnite.Extensions
+- Name: GitHub
+  Url: https://github.com/erri120/Playnite.Extensions
+Module: F95ZoneMetadata.dll
+Name: F95zone Metadata Provider
+Type: MetadataProvider
+Version: 2.6.1
