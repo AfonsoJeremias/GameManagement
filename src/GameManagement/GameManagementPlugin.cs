@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -17,15 +17,16 @@ using Playnite.SDK.Plugins;
 namespace GameManagement;
 
 [UsedImplicitly]
-public class GameManagementPlugin : GenericPlugin
+public class GameManagementPlugin : LibraryPlugin
 {
     private readonly IPlayniteAPI _playniteAPI;
-    private readonly StorageInfo _storageInfo;
     private readonly ILogger<GameManagementPlugin> _logger;
 
-    private string StoragePath => Path.Combine(GetPluginUserDataPath(), "storage.json");
-
+    // GUID obrigatório (mantido o mesmo)
     public override Guid Id => Guid.Parse("a37e0963-91ac-4432-be2a-69e366c44726");
+
+    // Nome da biblioteca (obrigatório para LibraryPlugin)
+    public override string Name { get; } = "Game Management";
 
     public GameManagementPlugin(IPlayniteAPI playniteAPI) : base(playniteAPI)
     {
@@ -34,37 +35,42 @@ public class GameManagementPlugin : GenericPlugin
 
         AssemblyLoader.ValidateReferencedAssemblies(_logger);
 
-        _storageInfo = new StorageInfo(_playniteAPI);
-        _storageInfo.LoadFromFile(StoragePath);
+        // Configurações da biblioteca (opcional, mas recomendado)
+        Properties = new LibraryPluginProperties
+        {
+            HasSettings = false,
+            HasCustomizedGameImport = false
+        };
     }
 
+    // ============================================================
+    // 1. GetGameMenuItems: apenas "Uninstall" para jogos "Playnite"
+    // ============================================================
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
-        yield return new GameMenuItem
-        {
-            Action = UninstallGameMenuAction,
-            Description = "Uninstall"
-        };
+        // Verifica se todos os jogos selecionados são da biblioteca "Playnite"
+        var allPlayniteGames = args.Games.All(g =>
+            g.Library?.Equals("Playnite", StringComparison.OrdinalIgnoreCase) == true);
 
-        yield return new GameMenuItem
+        // Se houver pelo menos um jogo e todos forem Playnite, exibe a opção
+        if (allPlayniteGames && args.Games.Any())
         {
-            Action = UninstallAndRemoveGameMenuAction,
-            Description = "Uninstall and Remove"
-        };
+            yield return new GameMenuItem
+            {
+                Action = UninstallGameMenuAction,
+                Description = "Uninstall"  // ou "Desinstalar" se preferir
+            };
+        }
+
+        // A opção "Uninstall and Remove" foi removida
     }
 
+    // ============================================================
+    // 2. Lógica de desinstalação (inalterada)
+    // ============================================================
     private void UninstallGameMenuAction(GameMenuItemActionArgs args)
     {
         UninstallGames(args);
-    }
-
-    private void UninstallAndRemoveGameMenuAction(GameMenuItemActionArgs args)
-    {
-        var games = UninstallGames(args);
-        foreach (var game in games)
-        {
-            _playniteAPI.Database.Games.Remove(game);
-        }
     }
 
     private List<Game> UninstallGames(GameMenuItemActionArgs args)
@@ -72,8 +78,13 @@ public class GameManagementPlugin : GenericPlugin
         var games = args.Games;
         if (games is null || !games.Any()) return new List<Game>();
 
-        var result = _playniteAPI.Dialogs.ShowMessage($"Do you really want to uninstall {games.Count} game(s)?",
-            "Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        // Caixa de diálogo de confirmação
+        var result = _playniteAPI.Dialogs.ShowMessage(
+            $"Do you really want to uninstall {games.Count} game(s)?",
+            "Confirmation",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
         if (result != MessageBoxResult.Yes)
         {
             return new List<Game>();
@@ -101,6 +112,7 @@ public class GameManagementPlugin : GenericPlugin
                 progressArgs.CurrentProgressValue += 1;
                 progressArgs.Text = $"Uninstalling {game.Name}";
 
+                // Verifica se o jogo está realmente instalado
                 if (game.InstallationStatus != InstallationStatus.Installed
                     || string.IsNullOrWhiteSpace(game.InstallDirectory)
                     || !Directory.Exists(game.InstallDirectory))
@@ -109,59 +121,45 @@ public class GameManagementPlugin : GenericPlugin
                     continue;
                 }
 
+                // ⚠️ EXCLUSÃO PERMANENTE (não vai para a Lixeira)
                 Directory.Delete(game.InstallDirectory, true);
+
+                // Marca o jogo como não instalado
                 game.IsInstalled = false;
                 actuallyUninstalledGames.Add(game);
-                _storageInfo.RemoveStorageInfo(game);
             }
 
-            _storageInfo.SaveToFile(StoragePath);
         }, new GlobalProgressOptions($"Uninstalling {games.Count} game(s)", true));
 
         return actuallyUninstalledGames;
     }
 
-    private readonly CancellationTokenSource _source = new();
+    // ============================================================
+    // 3. Métodos obrigatórios da classe LibraryPlugin
+    // ============================================================
 
-    public override void OnApplicationStarted(OnApplicationStartedEventArgs args)
+    // Retorna uma lista vazia, pois este plugin não importa jogos
+    public override IEnumerable<GameMetadata> GetGames(LibraryGetGamesArgs args)
     {
-        Task.Run(() =>
-        {
-            _storageInfo.UpdateStorageInfoForAllNewGames();
-            _storageInfo.SaveToFile(StoragePath);
-        }, _source.Token);
+        return Enumerable.Empty<GameMetadata>();
     }
 
-    public override void OnApplicationStopped(OnApplicationStoppedEventArgs args)
+    // Sem provedor de metadados
+    public override LibraryMetadataProvider GetMetadataDownloader()
     {
-        if (_source.IsCancellationRequested) return;
-        _source.Cancel();
-        _source.Dispose();
+        return null;
     }
 
-    public override void OnGameInstalled(OnGameInstalledEventArgs args)
-    {
-        _storageInfo.AddStorageInfo(args.Game);
-        _storageInfo.SaveToFile(StoragePath);
-    }
+    // ============================================================
+    // 4. Eventos removidos (sem StorageInfo)
+    // ============================================================
 
-    public override void OnGameUninstalled(OnGameUninstalledEventArgs args)
-    {
-        _storageInfo.RemoveStorageInfo(args.Game);
-        _storageInfo.SaveToFile(StoragePath);
-    }
+    // OnGameInstalled, OnGameUninstalled e OnApplicationStarted/Stopped
+    // foram removidos porque não há mais StorageInfo para gerenciar.
 
-    public override IEnumerable<SidebarItem> GetSidebarItems()
-    {
-        yield return new SidebarItem
-        {
-            Title = "View Storage Statistics",
-            Type = SiderbarItemType.View,
-            Visible = true,
-            Opened = () => new StorageStatisticsView
-            {
-                DataContext = _storageInfo
-            }
-        };
-    }
+    // ============================================================
+    // 5. SidebarItems removido (sem StorageStatisticsView)
+    // ============================================================
+
+    // O método GetSidebarItems foi removido.
 }
