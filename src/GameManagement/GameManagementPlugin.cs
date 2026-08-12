@@ -39,16 +39,15 @@ public class GameManagementPlugin : LibraryPlugin
 
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
-        // Verifica se todos os jogos selecionados são da biblioteca "Playnite"
-        var allPlayniteGames = args.Games.All(g =>
-            g.Library?.Equals("Playnite", StringComparison.OrdinalIgnoreCase) == true);
+        // Apenas jogos adicionados manualmente (Source == null)
+        var allPlayniteGames = args.Games.All(g => g.Source == null);
 
         if (allPlayniteGames && args.Games.Any())
         {
             yield return new GameMenuItem
             {
                 Action = UninstallGameMenuAction,
-                Description = "Uninstall"  // ou "Desinstalar"
+                Description = "Uninstall"
             };
         }
     }
@@ -113,5 +112,5 @@ public class GameManagementPlugin : LibraryPlugin
         => Enumerable.Empty<GameMetadata>();
 
     public override LibraryMetadataProvider GetMetadataDownloader()
-        => null!; // Suprime aviso CS8603
+        => null!;
 }
