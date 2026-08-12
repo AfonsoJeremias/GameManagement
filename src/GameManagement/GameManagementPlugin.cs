@@ -15,13 +15,12 @@ using Playnite.SDK.Plugins;
 namespace GameManagement;
 
 [UsedImplicitly]
-public class GameManagementPlugin : LibraryPlugin
+public class GameManagementPlugin : GenericPlugin
 {
     private readonly IPlayniteAPI _playniteAPI;
     private readonly ILogger<GameManagementPlugin> _logger;
 
     public override Guid Id => Guid.Parse("a37e0963-91ac-4432-be2a-69e366c44726");
-    public override string Name { get; } = "Game Management";
 
     public GameManagementPlugin(IPlayniteAPI playniteAPI) : base(playniteAPI)
     {
@@ -29,25 +28,19 @@ public class GameManagementPlugin : LibraryPlugin
         _logger = CustomLogger.GetLogger<GameManagementPlugin>(nameof(GameManagementPlugin));
 
         AssemblyLoader.ValidateReferencedAssemblies(_logger);
-
-        Properties = new LibraryPluginProperties
-        {
-            HasSettings = false,
-            HasCustomizedGameImport = false
-        };
     }
 
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
         // Apenas jogos adicionados manualmente (Source == null)
-        var allPlayniteGames = args.Games.All(g => g.Source == null);
+        var allManualGames = args.Games.All(g => g.Source == null);
 
-        if (allPlayniteGames && args.Games.Any())
+        if (allManualGames && args.Games.Any())
         {
             yield return new GameMenuItem
             {
                 Action = UninstallGameMenuAction,
-                Description = "Uninstall"
+                Description = "Uninstall"   // O texto pode ser "Desinstalar" também
             };
         }
     }
@@ -107,11 +100,4 @@ public class GameManagementPlugin : LibraryPlugin
 
         return actuallyUninstalledGames;
     }
-
-    // Métodos obrigatórios para LibraryPlugin
-    public override IEnumerable<GameMetadata> GetGames(LibraryGetGamesArgs args)
-        => Enumerable.Empty<GameMetadata>();
-
-    public override LibraryMetadataProvider GetMetadataDownloader()
-        => null!;
 }
