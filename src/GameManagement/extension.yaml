@@ -6,4 +6,7 @@ Links:
 Module: GameManagement.dll
 Name: Game Management Plugin
 Type: LibraryPlugin
-Version: 2.6.1
+SupportedProviders:
+  - Playnite
+GameLibrary: GameManagementPlugin
+Version: 2.6.2
