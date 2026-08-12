@@ -1,5 +1,9 @@
 AddonId: GameManagement
 Packages:
+- PackageUrl: https://github.com/erri120/Playnite.Extensions/releases/download/v2.6.3/GameManagement.pext
+  ReleaseDate: '2026-08-12'
+  RequiredApiVersion: 6.2.2
+  Version: 2.6.3
 - PackageUrl: https://github.com/erri120/Playnite.Extensions/releases/download/v2.6.2/GameManagement.pext
   ReleaseDate: '2026-08-12'
   RequiredApiVersion: 6.2.2
