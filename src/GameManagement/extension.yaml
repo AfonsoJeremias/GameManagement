@@ -1,12 +1,12 @@
 Author: erri120
+GameLibrary: GameManagementPlugin
 Id: GameManagement
 Links:
 - Name: GitHub
   Url: https://github.com/erri120/Playnite.Extensions
 Module: GameManagement.dll
 Name: Game Management Plugin
-Type: LibraryPlugin
 SupportedProviders:
-  - Playnite
-GameLibrary: GameManagementPlugin
+- Playnite
+Type: LibraryPlugin
 Version: 2.6.2
