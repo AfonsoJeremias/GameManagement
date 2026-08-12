@@ -108,6 +108,7 @@ public class GameManagementPlugin : LibraryPlugin
         return actuallyUninstalledGames;
     }
 
+    // Métodos obrigatórios para LibraryPlugin
     public override IEnumerable<GameMetadata> GetGames(LibraryGetGamesArgs args)
         => Enumerable.Empty<GameMetadata>();
 
