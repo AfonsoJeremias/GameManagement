@@ -16,7 +16,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
@@ -26,22 +26,22 @@ jobs:
       env:
         INPUT_VERSION: ${{ github.event.inputs.version }}
       run: |
-        echo ::set-output name=current_version::${INPUT_VERSION}
+        echo "current_version=${INPUT_VERSION}" >> $GITHUB_OUTPUT
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         cache: 'pip'
+
     - name: Installing pip dependencies
       run: pip install -r requirements.txt
 
     - name: Change Version
       run: python scripts/build.py update ${{ steps.tag_name.outputs.current_version }}
 
-    # required for LangVersion 10
     - name: Setup .NET 6.0.x
-      uses: actions/setup-dotnet@v1
+      uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 6.0.x
 
@@ -59,9 +59,9 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: v${{ steps.tag_name.outputs.current_version }}
         name: Release ${{ steps.tag_name.outputs.current_version }}
@@ -72,7 +72,7 @@ jobs:
           out/*.pext
 
     - name: Commit and Push Installer Manifests
-      uses: stefanzweifel/git-auto-commit-action@v4
+      uses: stefanzweifel/git-auto-commit-action@v5
       with:
-          commit_message: Update Installer Manifests
-          file_pattern: manifests/*.yaml src/*.yaml
+        commit_message: Update Installer Manifests
+        file_pattern: manifests/*.yaml src/*.yaml
