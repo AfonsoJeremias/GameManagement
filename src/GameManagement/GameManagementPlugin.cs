@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows;
-using Extensions.Common;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
 using Other;
@@ -32,15 +31,13 @@ public class GameManagementPlugin : GenericPlugin
 
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
-        // Apenas jogos adicionados manualmente (Source == null)
-        var allManualGames = args.Games.All(g => g.Source == null);
-
-        if (allManualGames && args.Games.Any())
+        var games = args.Games;
+        if (games != null && games.Any() && games.All(g => g.Source?.Name == "Playnite"))
         {
             yield return new GameMenuItem
             {
                 Action = UninstallGameMenuAction,
-                Description = "Uninstall"   // O texto pode ser "Desinstalar" também
+                Description = _playniteAPI.Resources.GetString("LOCUninstall") // Localizado
             };
         }
     }
@@ -77,16 +74,17 @@ public class GameManagementPlugin : GenericPlugin
             {
                 if (progressArgs.CancelToken.IsCancellationRequested)
                 {
-                    _logger.LogInformation("Uninstallation canceled");
+                    _logger.LogInformation("Uninstallation has been canceled");
                     return;
                 }
 
+                _logger.LogDebug("Uninstalling {Name}", game.Name);
                 progressArgs.CurrentProgressValue++;
                 progressArgs.Text = $"Uninstalling {game.Name}";
 
-                if (game.InstallationStatus != InstallationStatus.Installed ||
-                    string.IsNullOrWhiteSpace(game.InstallDirectory) ||
-                    !Directory.Exists(game.InstallDirectory))
+                if (game.InstallationStatus != InstallationStatus.Installed
+                    || string.IsNullOrWhiteSpace(game.InstallDirectory)
+                    || !Directory.Exists(game.InstallDirectory))
                 {
                     _logger.LogError("Game {Name} is not installed!", game.Name);
                     continue;
@@ -95,7 +93,9 @@ public class GameManagementPlugin : GenericPlugin
                 Directory.Delete(game.InstallDirectory, true);
                 game.IsInstalled = false;
                 actuallyUninstalledGames.Add(game);
+                // StorageInfo removido
             }
+            // StorageInfo removido
         }, new GlobalProgressOptions($"Uninstalling {games.Count} game(s)", true));
 
         return actuallyUninstalledGames;
