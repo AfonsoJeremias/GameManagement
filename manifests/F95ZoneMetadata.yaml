@@ -1,5 +1,9 @@
 AddonId: F95ZoneMetadata
 Packages:
+- PackageUrl: https://github.com/erri120/Playnite.Extensions/releases/download/v2.6.4/F95ZoneMetadata.pext
+  ReleaseDate: '2026-08-13'
+  RequiredApiVersion: 6.2.2
+  Version: 2.6.4
 - PackageUrl: https://github.com/erri120/Playnite.Extensions/releases/download/v2.6.3/F95ZoneMetadata.pext
   ReleaseDate: '2026-08-12'
   RequiredApiVersion: 6.2.2
