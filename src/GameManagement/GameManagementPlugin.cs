@@ -22,7 +22,7 @@ public class GameManagementPlugin : GenericPlugin
     private readonly IPlayniteAPI _playniteAPI;
     private readonly StorageInfo _storageInfo;
     private readonly ILogger<GameManagementPlugin> _logger;
-    private ResourceDictionary _localizationResources;
+    private ResourceDictionary? _localizationResources; // nullable para evitar CS8618
 
     private string StoragePath => Path.Combine(GetPluginUserDataPath(), "storage.json");
 
@@ -50,9 +50,12 @@ public class GameManagementPlugin : GenericPlugin
     {
         try
         {
+            // Obtém o diretório onde a DLL do plugin está instalada
+            string pluginDirectory = Path.GetDirectoryName(GetType().Assembly.Location)!;
+            var localizationFolder = Path.Combine(pluginDirectory, "Localization");
+
             // Obtém o código de idioma configurado no Playnite (ex: "pt_BR", "en_US")
             var culture = _playniteAPI.ApplicationSettings.Language ?? "en_US";
-            var localizationFolder = Path.Combine(GetPluginPath(), "Localization");
             var resourceFile = Path.Combine(localizationFolder, $"{culture}.xaml");
 
             // Se o arquivo específico não existir, tenta o fallback para en_US
@@ -87,15 +90,15 @@ public class GameManagementPlugin : GenericPlugin
 
     /// <summary>
     /// Obtém uma string localizada do dicionário de recursos.
-    /// Fallback para a chave ou para um texto padrão.
+    /// Fallback para o valor padrão ou para a própria chave.
     /// </summary>
-    private string GetLocalizedString(string key, string defaultValue = null)
+    private string GetLocalizedString(string key, string defaultValue)
     {
         if (_localizationResources != null && _localizationResources.Contains(key))
         {
-            return _localizationResources[key] as string ?? defaultValue ?? key;
+            return _localizationResources[key] as string ?? defaultValue;
         }
-        return defaultValue ?? key;
+        return defaultValue;
     }
 
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
@@ -114,7 +117,7 @@ public class GameManagementPlugin : GenericPlugin
                 Description = uninstallText
             };
         }
-        // A opção "Uninstall and Remove" foi removida conforme solicitado
+        // A opção "Uninstall and Remove" foi removida
     }
 
     private void UninstallGameMenuAction(GameMenuItemActionArgs args)
