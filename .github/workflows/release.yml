@@ -11,10 +11,10 @@ jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: write  # <-- NECESSÁRIO para criar a release
+      contents: write  # necessário para criar a release
 
     env:
-      SOLUTION: src/Playnite.Extensions.sln
+      PROJECT: src/GameManagement/GameManagement.csproj   # <-- APENAS GameManagement
 
     steps:
     - name: Checkout
@@ -45,13 +45,13 @@ jobs:
         dotnet-version: 6.0.x
 
     - name: Clear local NuGet cache
-      run: dotnet clean $env:SOLUTION && dotnet nuget locals all --clear
+      run: dotnet clean $env:PROJECT && dotnet nuget locals all --clear
 
     - name: Restore dependencies
-      run: dotnet restore $env:SOLUTION
+      run: dotnet restore $env:PROJECT
 
-    - name: Build
-      run: dotnet build $env:SOLUTION --no-restore -p:Version="${{ steps.tag_name.outputs.current_version }}"
+    - name: Build GameManagement
+      run: dotnet build $env:PROJECT --no-restore -p:Version="${{ steps.tag_name.outputs.current_version }}"
 
     - name: Change Version (update manifests)
       run: python scripts/build.py update ${{ steps.tag_name.outputs.current_version }}
@@ -71,10 +71,10 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          out/*.pext
+          out/GameManagement.pext
 
     - name: Commit and Push Installer Manifests
       uses: stefanzweifel/git-auto-commit-action@v5
       with:
-        commit_message: Update Installer Manifests
-        file_pattern: manifests/*.yaml src/*.yaml
+        commit_message: Update GameManagement Installer Manifest
+        file_pattern: manifests/GameManagement.yaml src/GameManagement/extension.yaml
