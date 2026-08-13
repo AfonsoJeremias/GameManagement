@@ -22,6 +22,7 @@ public class GameManagementPlugin : GenericPlugin
     private readonly IPlayniteAPI _playniteAPI;
     private readonly StorageInfo _storageInfo;
     private readonly ILogger<GameManagementPlugin> _logger;
+    private ResourceDictionary _localizationResources;
 
     private string StoragePath => Path.Combine(GetPluginUserDataPath(), "storage.json");
 
@@ -36,23 +37,84 @@ public class GameManagementPlugin : GenericPlugin
 
         _storageInfo = new StorageInfo(_playniteAPI);
         _storageInfo.LoadFromFile(StoragePath);
+
+        // Carrega os recursos de localização
+        LoadLocalizationResources();
+    }
+
+    /// <summary>
+    /// Carrega o dicionário de recursos de localização com base no idioma configurado no Playnite.
+    /// Fallback para en_US se o idioma atual não estiver disponível.
+    /// </summary>
+    private void LoadLocalizationResources()
+    {
+        try
+        {
+            // Obtém o código de idioma configurado no Playnite (ex: "pt_BR", "en_US")
+            var culture = _playniteAPI.ApplicationSettings.Language ?? "en_US";
+            var localizationFolder = Path.Combine(GetPluginPath(), "Localization");
+            var resourceFile = Path.Combine(localizationFolder, $"{culture}.xaml");
+
+            // Se o arquivo específico não existir, tenta o fallback para en_US
+            if (!File.Exists(resourceFile))
+            {
+                resourceFile = Path.Combine(localizationFolder, "en_US.xaml");
+                if (!File.Exists(resourceFile))
+                {
+                    _logger.LogWarning("Localization file not found, using default English strings.");
+                    return;
+                }
+            }
+
+            _localizationResources = new ResourceDictionary
+            {
+                Source = new Uri(resourceFile, UriKind.Absolute)
+            };
+
+            // Opcional: adiciona ao Application.Resources para uso em outras partes
+            if (!Application.Current.Resources.MergedDictionaries.Contains(_localizationResources))
+            {
+                Application.Current.Resources.MergedDictionaries.Add(_localizationResources);
+            }
+
+            _logger.LogInformation("Loaded localization from {ResourceFile}", resourceFile);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load localization resources");
+        }
+    }
+
+    /// <summary>
+    /// Obtém uma string localizada do dicionário de recursos.
+    /// Fallback para a chave ou para um texto padrão.
+    /// </summary>
+    private string GetLocalizedString(string key, string defaultValue = null)
+    {
+        if (_localizationResources != null && _localizationResources.Contains(key))
+        {
+            return _localizationResources[key] as string ?? defaultValue ?? key;
+        }
+        return defaultValue ?? key;
     }
 
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
         // Verifica se todos os jogos selecionados são da biblioteca "Playnite" (adicionados manualmente)
         var allPlayniteGames = args.Games?.All(g => g.Source?.Name == "Playnite") ?? false;
-    
+
         if (allPlayniteGames)
         {
-            var uninstallText = _playniteAPI.Resources.GetString("LOCUninstall") ?? "Uninstall";
+            // Obtém o texto "Uninstall" localizado
+            var uninstallText = GetLocalizedString("GameManagement_Uninstall", "Uninstall");
+
             yield return new GameMenuItem
             {
                 Action = UninstallGameMenuAction,
                 Description = uninstallText
             };
         }
-        // A opção "Uninstall and Remove" foi removida
+        // A opção "Uninstall and Remove" foi removida conforme solicitado
     }
 
     private void UninstallGameMenuAction(GameMenuItemActionArgs args)
@@ -65,14 +127,21 @@ public class GameManagementPlugin : GenericPlugin
         var games = args.Games;
         if (games is null || !games.Any()) return new List<Game>();
 
-        var result = _playniteAPI.Dialogs.ShowMessage($"Do you really want to uninstall {games.Count} game(s)?",
-            "Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        // Obtém textos localizados para a confirmação
+        var title = GetLocalizedString("GameManagement_ConfirmationTitle", "Confirmation");
+        var messageTemplate = GetLocalizedString("GameManagement_ConfirmationMessage", 
+            "Do you really want to uninstall {0} game(s)?");
+        var message = string.Format(messageTemplate, games.Count);
+
+        var result = _playniteAPI.Dialogs.ShowMessage(message, title, 
+            MessageBoxButton.YesNo, MessageBoxImage.Question);
+        
         if (result != MessageBoxResult.Yes)
         {
             return new List<Game>();
         }
 
-        _logger.LogInformation("Uninstalling {Count} game(s)", games.Count.ToString());
+        _logger.LogInformation("Uninstalling {Count} game(s)", games.Count);
 
         var actuallyUninstalledGames = new List<Game>(games.Count);
 
@@ -92,7 +161,9 @@ public class GameManagementPlugin : GenericPlugin
                 _logger.LogDebug("Uninstalling {Name}", game.Name);
 
                 progressArgs.CurrentProgressValue += 1;
-                progressArgs.Text = $"Uninstalling {game.Name}";
+                progressArgs.Text = string.Format(
+                    GetLocalizedString("GameManagement_ProgressText", "Uninstalling {0}"), 
+                    game.Name);
 
                 if (game.InstallationStatus != InstallationStatus.Installed
                     || string.IsNullOrWhiteSpace(game.InstallDirectory)
@@ -109,7 +180,9 @@ public class GameManagementPlugin : GenericPlugin
             }
 
             _storageInfo.SaveToFile(StoragePath);
-        }, new GlobalProgressOptions($"Uninstalling {games.Count} game(s)", true));
+        }, new GlobalProgressOptions(
+            string.Format(GetLocalizedString("GameManagement_ProgressTitle", "Uninstalling {0} games"), games.Count), 
+            true));
 
         return actuallyUninstalledGames;
     }
@@ -148,7 +221,7 @@ public class GameManagementPlugin : GenericPlugin
     {
         yield return new SidebarItem
         {
-            Title = "View Storage Statistics",
+            Title = GetLocalizedString("GameManagement_SidebarTitle", "View Storage Statistics"),
             Type = SiderbarItemType.View,
             Visible = true,
             Opened = () => new StorageStatisticsView
