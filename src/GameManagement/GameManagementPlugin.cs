@@ -2,13 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using Extensions.Common;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
-using Other;
 using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Models;
@@ -20,11 +17,8 @@ namespace GameManagement;
 public class GameManagementPlugin : GenericPlugin
 {
     private readonly IPlayniteAPI _playniteAPI;
-    private readonly StorageInfo _storageInfo;
     private readonly ILogger<GameManagementPlugin> _logger;
     private ResourceDictionary? _localizationResources;
-
-    private string StoragePath => Path.Combine(GetPluginUserDataPath(), "storage.json");
 
     public override Guid Id => Guid.Parse("a37e0963-91ac-4432-be2a-69e366c44726");
 
@@ -35,11 +29,10 @@ public class GameManagementPlugin : GenericPlugin
 
         AssemblyLoader.ValidateReferencedAssemblies(_logger);
 
-        _storageInfo = new StorageInfo(_playniteAPI);
-        _storageInfo.LoadFromFile(StoragePath);
-
         LoadLocalizationResources();
     }
+
+    #region Localization
 
     private void LoadLocalizationResources()
     {
@@ -88,6 +81,10 @@ public class GameManagementPlugin : GenericPlugin
         return defaultValue;
     }
 
+    #endregion
+
+    #region Menu Items
+
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
         var allPlayniteGames = args.Games?.All(g => g.Source?.Name == "Playnite") ?? false;
@@ -109,11 +106,15 @@ public class GameManagementPlugin : GenericPlugin
         UninstallGames(args);
     }
 
+    #endregion
+
+    #region Uninstall Logic
+
     private List<Game> UninstallGames(GameMenuItemActionArgs args)
     {
         var games = args.Games;
         if (games is null || !games.Any()) return new List<Game>();
-    
+
         var title = GetLocalizedString("GameManagement_ConfirmationTitle", "Confirmation");
         string message;
         if (games.Count == 1)
@@ -127,20 +128,24 @@ public class GameManagementPlugin : GenericPlugin
                 "Do you really want to uninstall these {0} games?");
             message = string.Format(template, games.Count);
         }
-    
+
         var result = _playniteAPI.Dialogs.ShowMessage(message, title, 
             MessageBoxButton.YesNo, MessageBoxImage.Question);
+        
         if (result != MessageBoxResult.Yes)
+        {
             return new List<Game>();
-    
+        }
+
         _logger.LogInformation("Uninstalling {Count} game(s)", games.Count);
+
         var actuallyUninstalledGames = new List<Game>(games.Count);
-    
+
         _playniteAPI.Dialogs.ActivateGlobalProgress(progressArgs =>
         {
             progressArgs.ProgressMaxValue = games.Count;
             progressArgs.CurrentProgressValue = 0;
-    
+
             foreach (var game in games)
             {
                 if (progressArgs.CancelToken.IsCancellationRequested)
@@ -148,25 +153,23 @@ public class GameManagementPlugin : GenericPlugin
                     _logger.LogInformation("Uninstallation has been canceled");
                     return;
                 }
-    
+
                 _logger.LogDebug("Uninstalling {Name}", game.Name);
+
                 progressArgs.CurrentProgressValue += 1;
                 progressArgs.Text = string.Format(
                     GetLocalizedString("GameManagement_ProgressText", "Uninstalling {0}"), 
                     game.Name);
-    
-                // Verifica se o jogo está instalado e tem um diretório definido
+
                 if (game.InstallationStatus != InstallationStatus.Installed ||
                     string.IsNullOrWhiteSpace(game.InstallDirectory))
                 {
                     _logger.LogError("Game {Name} is not installed or has no install directory!", game.Name);
                     continue;
                 }
-    
-                // 1. Expande placeholders como {PlayniteDir}, {InstallDir}, etc.
+
                 string resolvedPath = _playniteAPI.ExpandGameVariables(game, game.InstallDirectory);
-    
-                // 2. Converte para caminho absoluto (resolve .. e .)
+
                 try
                 {
                     resolvedPath = Path.GetFullPath(resolvedPath);
@@ -176,15 +179,13 @@ public class GameManagementPlugin : GenericPlugin
                     _logger.LogError(ex, "Failed to resolve path {Path} for game {Name}", resolvedPath, game.Name);
                     continue;
                 }
-    
-                // Verifica se o diretório realmente existe
+
                 if (!Directory.Exists(resolvedPath))
                 {
                     _logger.LogError("Game {Name} install directory does not exist: {Path}", game.Name, resolvedPath);
                     continue;
                 }
-    
-                // Tenta excluir o diretório
+
                 try
                 {
                     Directory.Delete(resolvedPath, true);
@@ -197,56 +198,12 @@ public class GameManagementPlugin : GenericPlugin
                     _logger.LogError(ex, "Failed to delete directory {Path} for game {Name}", resolvedPath, game.Name);
                 }
             }
-    
-            _storageInfo.SaveToFile(StoragePath);
         }, new GlobalProgressOptions(
             string.Format(GetLocalizedString("GameManagement_ProgressTitle", "Uninstalling {0} games"), games.Count), 
             true));
-    
+
         return actuallyUninstalledGames;
     }
 
-    private readonly CancellationTokenSource _source = new();
-
-    public override void OnApplicationStarted(OnApplicationStartedEventArgs args)
-    {
-        Task.Run(() =>
-        {
-            _storageInfo.UpdateStorageInfoForAllNewGames();
-            _storageInfo.SaveToFile(StoragePath);
-        }, _source.Token);
-    }
-
-    public override void OnApplicationStopped(OnApplicationStoppedEventArgs args)
-    {
-        if (_source.IsCancellationRequested) return;
-        _source.Cancel();
-        _source.Dispose();
-    }
-
-    public override void OnGameInstalled(OnGameInstalledEventArgs args)
-    {
-        _storageInfo.AddStorageInfo(args.Game);
-        _storageInfo.SaveToFile(StoragePath);
-    }
-
-    public override void OnGameUninstalled(OnGameUninstalledEventArgs args)
-    {
-        _storageInfo.RemoveStorageInfo(args.Game);
-        _storageInfo.SaveToFile(StoragePath);
-    }
-
-    public override IEnumerable<SidebarItem> GetSidebarItems()
-    {
-        yield return new SidebarItem
-        {
-            Title = GetLocalizedString("GameManagement_SidebarTitle", "View Storage Statistics"),
-            Type = SiderbarItemType.View,
-            Visible = true,
-            Opened = () => new StorageStatisticsView
-            {
-                DataContext = _storageInfo
-            }
-        };
-    }
+    #endregion
 }
