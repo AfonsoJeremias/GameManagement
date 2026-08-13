@@ -27,7 +27,7 @@ public class GameManagementPlugin : GenericPlugin
         _playniteAPI = playniteAPI;
         _logger = CustomLogger.GetLogger<GameManagementPlugin>(nameof(GameManagementPlugin));
 
-        AssemblyLoader.ValidateReferencedAssemblies(_logger);
+        // AssemblyLoader.ValidateReferencedAssemblies(_logger); // REMOVIDO – não necessário
 
         LoadLocalizationResources();
     }
