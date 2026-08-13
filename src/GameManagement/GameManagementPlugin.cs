@@ -41,20 +41,18 @@ public class GameManagementPlugin : GenericPlugin
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
         // Verifica se todos os jogos selecionados são da biblioteca "Playnite" (adicionados manualmente)
-        var allPlayniteGames = args.Games?.All(g => g.Source == "Playnite") ?? false;
-
+        var allPlayniteGames = args.Games?.All(g => g.Source?.Name == "Playnite") ?? false;
+    
         if (allPlayniteGames)
         {
-            // Texto localizado para "Uninstall"
             var uninstallText = _playniteAPI.Resources.GetString("LOCUninstall") ?? "Uninstall";
-
             yield return new GameMenuItem
             {
                 Action = UninstallGameMenuAction,
                 Description = uninstallText
             };
         }
-        // A opção "Uninstall and Remove" foi removida completamente
+        // A opção "Uninstall and Remove" foi removida
     }
 
     private void UninstallGameMenuAction(GameMenuItemActionArgs args)
