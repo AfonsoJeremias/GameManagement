@@ -306,38 +306,41 @@ public class GameManagementPlugin : GenericPlugin
     #region Custom Uninstall Controller
 
     private class CustomUninstallController : UninstallController
-{
-    private readonly Game _game;
-    private readonly GameManagementPlugin _plugin;
-
-    public CustomUninstallController(Game game, GameManagementPlugin plugin) : base(game)
     {
-        _game = game;
-        _plugin = plugin;
-        Name = "Gerenciado pelo Playnite";
-    }
+        private readonly Game _game;
+        private readonly GameManagementPlugin _plugin;
 
-    public override void Uninstall(UninstallActionArgs args)
-    {
-        try
+        public CustomUninstallController(Game game, GameManagementPlugin plugin) : base(game)
         {
-            var result = _plugin.UninstallGamesCore(new[] { _game }, showConfirmation: false, showProgress: false);
+            _game = game;
+            _plugin = plugin;
+            Name = "Gerenciado pelo Playnite";
+        }
 
-            if (result.Contains(_game))
+        public override void Uninstall(UninstallActionArgs args)
+        {
+            try
             {
-                // CORRETO: usa InvokeOnUninstalled() para sinalizar sucesso
-                InvokeOnUninstalled();
+                var result = _plugin.UninstallGamesCore(new[] { _game }, showConfirmation: false, showProgress: false);
+
+                if (result.Contains(_game))
+                {
+                    // Sinaliza sucesso
+                    InvokeOnUninstalled();
+                }
+                else
+                {
+                    // Lança exceção para sinalizar falha
+                    throw new Exception("A desinstalação falhou ou foi cancelada.");
+                }
             }
-            else
+            catch (Exception)
             {
-                // CORRETO: lança uma exceção para sinalizar falha
-                throw new Exception("A desinstalação falhou ou foi cancelada.");
+                // Relança para o Playnite tratar como erro
+                throw;
             }
         }
-        catch (Exception ex)
-        {
-            // Relança a exceção para que o Playnite a trate como falha
-            throw;
-        }
     }
+
+    #endregion
 }
