@@ -84,7 +84,6 @@ public class GameManagementPlugin : GenericPlugin
 
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
-        // Apenas para jogos nativos (adicionados manualmente)
         var allPlayniteGames = args.Games?.All(g => g.PluginId == Guid.Empty) ?? false;
 
         if (allPlayniteGames)
@@ -108,15 +107,14 @@ public class GameManagementPlugin : GenericPlugin
 
     #region Uninstall Actions (Standard Playnite Button)
 
-    public override IEnumerable<UninstallAction> GetUninstallActions(GetUninstallActionsArgs args)
+    // USANDO NOMES TOTALMENTE QUALIFICADOS para evitar ambiguidade
+    public override IEnumerable<Playnite.SDK.Plugins.UninstallAction> GetUninstallActions(Playnite.SDK.Plugins.GetUninstallActionsArgs args)
     {
         var game = args.Game;
 
-        // Apenas para jogos nativos (adicionados manualmente)
         if (game.PluginId != Guid.Empty)
             yield break;
 
-        // Verifica se o jogo está instalado (ROM ou diretório)
         bool hasRom = game.Roms?.Any() == true;
         bool hasInstallDir = game.InstallationStatus == InstallationStatus.Installed &&
                              !string.IsNullOrEmpty(game.InstallDirectory);
@@ -124,7 +122,7 @@ public class GameManagementPlugin : GenericPlugin
         if (!hasRom && !hasInstallDir)
             yield break;
 
-        yield return new GameUninstallAction
+        yield return new Playnite.SDK.Plugins.GameUninstallAction
         {
             Controller = new CustomUninstallController(game, this),
             IsDefault = true
@@ -135,9 +133,6 @@ public class GameManagementPlugin : GenericPlugin
 
     #region Uninstall Logic Core
 
-    /// <summary>
-    /// Método público para desinstalação via menu de contexto (com confirmação e progresso).
-    /// </summary>
     public List<Game> UninstallGames(GameMenuItemActionArgs args)
     {
         var games = args.Games;
@@ -147,20 +142,12 @@ public class GameManagementPlugin : GenericPlugin
         return UninstallGamesCore(games, showConfirmation: true, showProgress: true);
     }
 
-    /// <summary>
-    /// Núcleo da lógica de desinstalação, reutilizado pelo menu e pelo controller.
-    /// </summary>
-    /// <param name="games">Lista de jogos a desinstalar.</param>
-    /// <param name="showConfirmation">Se deve exibir diálogo de confirmação.</param>
-    /// <param name="showProgress">Se deve exibir barra de progresso global.</param>
-    /// <returns>Lista de jogos que foram efetivamente desinstalados.</returns>
     private List<Game> UninstallGamesCore(IEnumerable<Game> games, bool showConfirmation, bool showProgress)
     {
         var gameList = games.ToList();
         if (!gameList.Any())
             return new List<Game>();
 
-        // --- Confirmação (se solicitado) ---
         if (showConfirmation)
         {
             var title = GetLocalizedString("GameManagement_ConfirmationTitle", "Confirmation");
@@ -188,10 +175,8 @@ public class GameManagementPlugin : GenericPlugin
 
         var actuallyUninstalledGames = new List<Game>(gameList.Count);
 
-        // --- Execução com ou sem progresso ---
         if (showProgress)
         {
-            // Modo com barra de progresso (usado pelo menu de contexto)
             _playniteAPI.Dialogs.ActivateGlobalProgress(progressArgs =>
             {
                 progressArgs.ProgressMaxValue = gameList.Count;
@@ -219,7 +204,6 @@ public class GameManagementPlugin : GenericPlugin
         }
         else
         {
-            // Modo sem barra de progresso (usado pelo UninstallController, onde o Playnite já exibe progresso)
             foreach (var game in gameList)
             {
                 if (TryUninstallSingleGame(game, out var result))
@@ -230,12 +214,6 @@ public class GameManagementPlugin : GenericPlugin
         return actuallyUninstalledGames;
     }
 
-    /// <summary>
-    /// Tenta desinstalar um único jogo (deleta ROM ou pasta de instalação).
-    /// </summary>
-    /// <param name="game">Jogo a desinstalar.</param>
-    /// <param name="uninstalledGame">Jogo desinstalado (ou null se falhou).</param>
-    /// <returns>True se desinstalado com sucesso, false caso contrário.</returns>
     private bool TryUninstallSingleGame(Game game, out Game? uninstalledGame)
     {
         uninstalledGame = null;
@@ -243,7 +221,6 @@ public class GameManagementPlugin : GenericPlugin
 
         bool deleted = false;
 
-        // ----- PRIORIDADE: ROM (primeiro caminho da coleção) -----
         string? romPath = null;
         if (game.Roms != null && game.Roms.Any())
         {
@@ -284,7 +261,6 @@ public class GameManagementPlugin : GenericPlugin
             }
         }
 
-        // ----- FALLBACK: Diretório de instalação (se a ROM não foi deletada) -----
         if (!deleted)
         {
             if (game.InstallationStatus != InstallationStatus.Installed ||
@@ -334,7 +310,7 @@ public class GameManagementPlugin : GenericPlugin
 
     #region Custom Uninstall Controller
 
-    private class CustomUninstallController : UninstallController
+    private class CustomUninstallController : Playnite.SDK.Plugins.UninstallController
     {
         private readonly Game _game;
         private readonly GameManagementPlugin _plugin;
@@ -346,17 +322,15 @@ public class GameManagementPlugin : GenericPlugin
             Name = "Gerenciado pelo Playnite";
         }
 
-        // Método correto para a API atual (Uninstall, não Start)
-        public override void Uninstall(UninstallActionArgs args)
+        public override void Uninstall(Playnite.SDK.Plugins.UninstallActionArgs args)
         {
             try
             {
-                // Chama o núcleo sem confirmação (Playnite já pergunta) e sem barra de progresso (Playnite já exibe)
                 var result = _plugin.UninstallGamesCore(new[] { _game }, showConfirmation: false, showProgress: false);
 
                 if (result.Contains(_game))
                 {
-                    Finish(null); // Sucesso
+                    Finish(null);
                 }
                 else
                 {
