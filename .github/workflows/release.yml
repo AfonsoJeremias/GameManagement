@@ -14,7 +14,7 @@ jobs:
       contents: write  # necessário para criar a release
 
     env:
-      PROJECT: src/GameManagement/GameManagement.csproj   # <-- APENAS GameManagement
+      PROJECT: src/GameManagement/GameManagement.csproj
 
     steps:
     - name: Checkout
@@ -56,8 +56,14 @@ jobs:
     - name: Change Version (update manifests)
       run: python scripts/build.py update ${{ steps.tag_name.outputs.current_version }}
 
-    - name: Pack
-      run: mkdir out && python scripts/build.py pack out
+    - name: Install Playnite Toolbox
+      run: dotnet tool install --global Playnite.Toolbox
+
+    - name: Pack Extension
+      shell: bash
+      run: |
+        mkdir -p out
+        toolbox pack --input "src/GameManagement/bin/Debug/net462/" --output "out/" --name "GameManagement_${{ steps.tag_name.outputs.current_version }}.pext"
 
     - name: Create Release
       id: create_release
@@ -71,7 +77,7 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          out/GameManagement.pext
+          out/GameManagement_${{ steps.tag_name.outputs.current_version }}.pext
 
     - name: Commit and Push Installer Manifests
       uses: stefanzweifel/git-auto-commit-action@v5
