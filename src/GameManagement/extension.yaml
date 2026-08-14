@@ -1,12 +1,11 @@
 Author: Afonso Jeremias
-Description: Enhanced fork of the Game Management plugin, adding smarter uninstall
-  for manually added games (ROMs and folders), visible only when games are installed.
-Icon: icon.png
 Id: GameManagement_a37e0963-91ac-4432-be2a-69e366c44726
+Name: Game Management
+Module: GameManagement.dll
+Description: Enhanced fork of the Game Management plugin, adding smarter uninstall for manually added games (ROMs and folders), visible only when games are installed.
+Type: GenericPlugin
+Icon: icon.png
+Version: 2.6.0
 Links:
 - Name: GitHub
   Url: https://github.com/AfonsoJeremias/GameManagement
-Module: GameManagement.dll
-Name: Game Management
-Type: GenericPlugin
-Version: 2.6.0
