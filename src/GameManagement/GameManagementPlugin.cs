@@ -306,40 +306,38 @@ public class GameManagementPlugin : GenericPlugin
     #region Custom Uninstall Controller
 
     private class CustomUninstallController : UninstallController
+{
+    private readonly Game _game;
+    private readonly GameManagementPlugin _plugin;
+
+    public CustomUninstallController(Game game, GameManagementPlugin plugin) : base(game)
     {
-        private readonly Game _game;
-        private readonly GameManagementPlugin _plugin;
-
-        public CustomUninstallController(Game game, GameManagementPlugin plugin) : base(game)
-        {
-            _game = game;
-            _plugin = plugin;
-            Name = "Gerenciado pelo Playnite";
-        }
-
-        public override void Uninstall(UninstallActionArgs args)
-        {
-            try
-            {
-                var result = _plugin.UninstallGamesCore(new[] { _game }, showConfirmation: false, showProgress: false);
-
-                if (result.Contains(_game))
-                {
-                    // CORREÇÃO: usar Finish() para sucesso
-                    Finish();
-                }
-                else
-                {
-                    // CORREÇÃO: usar Finish(Exception) para erro
-                    Finish(new Exception("A desinstalação falhou ou foi cancelada."));
-                }
-            }
-            catch (Exception ex)
-            {
-                Finish(ex);
-            }
-        }
+        _game = game;
+        _plugin = plugin;
+        Name = "Gerenciado pelo Playnite";
     }
 
-    #endregion
+    public override void Uninstall(UninstallActionArgs args)
+    {
+        try
+        {
+            var result = _plugin.UninstallGamesCore(new[] { _game }, showConfirmation: false, showProgress: false);
+
+            if (result.Contains(_game))
+            {
+                // CORRETO: usa InvokeOnUninstalled() para sinalizar sucesso
+                InvokeOnUninstalled();
+            }
+            else
+            {
+                // CORRETO: lança uma exceção para sinalizar falha
+                throw new Exception("A desinstalação falhou ou foi cancelada.");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Relança a exceção para que o Playnite a trate como falha
+            throw;
+        }
+    }
 }
