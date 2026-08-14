@@ -160,38 +160,45 @@ public class GameManagementPlugin : GenericPlugin
 
                 bool deleted = false;
 
-                // ----- PRIORIDADE: ROM -----
-                if (!string.IsNullOrWhiteSpace(game.Rom))
+                // ----- PRIORIDADE: ROM (primeiro caminho da coleção) -----
+                string romPath = null;
+                if (game.Roms != null && game.Roms.Any())
                 {
-                    string romPath = _playniteAPI.ExpandGameVariables(game, game.Rom);
+                    // Pega o caminho da primeira ROM (mais comum)
+                    romPath = game.Roms.First().Path;
+                }
+
+                if (!string.IsNullOrWhiteSpace(romPath))
+                {
+                    string resolvedRomPath = _playniteAPI.ExpandGameVariables(game, romPath);
                     try
                     {
-                        romPath = Path.GetFullPath(romPath);
+                        resolvedRomPath = Path.GetFullPath(resolvedRomPath);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to resolve ROM path {Path} for game {Name}", romPath, game.Name);
-                        continue;
+                        _logger.LogError(ex, "Failed to resolve ROM path {Path} for game {Name}", resolvedRomPath, game.Name);
+                        // Não continua, tenta fallback para InstallDirectory
                     }
 
-                    if (File.Exists(romPath))
+                    if (File.Exists(resolvedRomPath))
                     {
                         try
                         {
-                            File.Delete(romPath);
+                            File.Delete(resolvedRomPath);
                             game.IsInstalled = false;
                             actuallyUninstalledGames.Add(game);
-                            _logger.LogInformation("Successfully deleted ROM file {Path} for {Name}", romPath, game.Name);
+                            _logger.LogInformation("Successfully deleted ROM file {Path} for {Name}", resolvedRomPath, game.Name);
                             deleted = true;
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Failed to delete ROM file {Path} for game {Name}", romPath, game.Name);
+                            _logger.LogError(ex, "Failed to delete ROM file {Path} for game {Name}", resolvedRomPath, game.Name);
                         }
                     }
-                    else
+                    else if (!string.IsNullOrWhiteSpace(resolvedRomPath))
                     {
-                        _logger.LogWarning("ROM file {Path} does not exist for {Name}", romPath, game.Name);
+                        _logger.LogWarning("ROM file {Path} does not exist for {Name}", resolvedRomPath, game.Name);
                     }
                 }
 
