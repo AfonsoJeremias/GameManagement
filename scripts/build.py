@@ -83,8 +83,9 @@ def pack_plugin(build_output_path: Path, output_path: Path):
     with zipfile.ZipFile(zip_output_path, 'w', zipfile.ZIP_DEFLATED) as myzip:
         for root, dirs, files in os.walk(build_output_path):
             for file in files:
-                myzip.write(os.path.join(root, file), file)
-
+                full_path = os.path.join(root, file)
+                arcname = os.path.relpath(full_path, build_output_path)
+                myzip.write(full_path, arcname)
 
 def update_plugin_manifest(src_path: Path, new_version: str):
     extension_file = src_path.joinpath(PLUGIN, 'extension.yaml')
