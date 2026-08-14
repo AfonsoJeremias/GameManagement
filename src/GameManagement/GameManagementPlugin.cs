@@ -6,6 +6,7 @@ using System.Windows;
 using Extensions.Common;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
+using Microsoft.VisualBasic.FileIO; // Para Recycle Bin
 using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Models;
@@ -13,12 +14,30 @@ using Playnite.SDK.Plugins;
 
 namespace GameManagement;
 
+public enum DeletionMode
+{
+    RecycleBin,
+    Permanent
+}
+
+public class GameManagementSettings : ObservableObject
+{
+    private DeletionMode _deletionMode = DeletionMode.RecycleBin;
+
+    public DeletionMode DeletionMode
+    {
+        get => _deletionMode;
+        set => SetValue(ref _deletionMode, value);
+    }
+}
+
 [UsedImplicitly]
 public class GameManagementPlugin : GenericPlugin
 {
     private readonly IPlayniteAPI _playniteAPI;
     private readonly ILogger<GameManagementPlugin> _logger;
     private ResourceDictionary? _localizationResources;
+    private GameManagementSettings _settings;
 
     public override Guid Id => Guid.Parse("a37e0963-91ac-4432-be2a-69e366c44726");
 
@@ -27,6 +46,10 @@ public class GameManagementPlugin : GenericPlugin
         _playniteAPI = playniteAPI;
         _logger = CustomLogger.GetLogger<GameManagementPlugin>(nameof(GameManagementPlugin));
         LoadLocalizationResources();
+
+        // Carrega configurações
+        _settings = LoadPluginSettings<GameManagementSettings>() ?? new GameManagementSettings();
+        SavePluginSettings(_settings);
     }
 
     #region Localization
@@ -107,6 +130,27 @@ public class GameManagementPlugin : GenericPlugin
 
     #region Uninstall Logic
 
+    /// <summary>
+    /// Deleta um arquivo ou diretório conforme a configuração do usuário (Lixeira ou permanente).
+    /// </summary>
+    private void DeleteFileOrDirectory(string path, bool isDirectory)
+    {
+        if (isDirectory)
+        {
+            if (_settings.DeletionMode == DeletionMode.RecycleBin)
+                FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+            else
+                Directory.Delete(path, true);
+        }
+        else
+        {
+            if (_settings.DeletionMode == DeletionMode.RecycleBin)
+                FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+            else
+                File.Delete(path);
+        }
+    }
+
     private List<Game> UninstallGames(GameMenuItemActionArgs args)
     {
         var games = args.Games;
@@ -135,7 +179,6 @@ public class GameManagementPlugin : GenericPlugin
         }
 
         _logger.LogInformation("Uninstalling {Count} game(s)", games.Count);
-
         var actuallyUninstalledGames = new List<Game>(games.Count);
 
         _playniteAPI.Dialogs.ActivateGlobalProgress(progressArgs =>
@@ -159,8 +202,10 @@ public class GameManagementPlugin : GenericPlugin
                     game.Name);
 
                 bool deleted = false;
+                string? targetPath = null;
+                bool isDirectory = false;
 
-                // ----- PRIORIDADE: ROM (primeiro caminho da coleção) -----
+                // ----- PRIORIDADE 1: ROM (primeiro arquivo da coleção) -----
                 string? romPath = null;
                 if (game.Roms != null && game.Roms.Any())
                 {
@@ -181,18 +226,9 @@ public class GameManagementPlugin : GenericPlugin
 
                     if (File.Exists(resolvedRomPath))
                     {
-                        try
-                        {
-                            File.Delete(resolvedRomPath);
-                            game.IsInstalled = false;
-                            actuallyUninstalledGames.Add(game);
-                            _logger.LogInformation("Successfully deleted ROM file {Path} for {Name}", resolvedRomPath, game.Name);
-                            deleted = true;
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Failed to delete ROM file {Path} for game {Name}", resolvedRomPath, game.Name);
-                        }
+                        targetPath = resolvedRomPath;
+                        isDirectory = false;
+                        deleted = true;
                     }
                     else
                     {
@@ -200,7 +236,7 @@ public class GameManagementPlugin : GenericPlugin
                     }
                 }
 
-                // ----- FALLBACK: Diretório de instalação (se a ROM não foi deletada) -----
+                // ----- PRIORIDADE 2: Diretório de instalação (se a ROM não foi encontrada) -----
                 if (!deleted)
                 {
                     if (game.InstallationStatus != InstallationStatus.Installed ||
@@ -222,23 +258,36 @@ public class GameManagementPlugin : GenericPlugin
                         continue;
                     }
 
-                    if (!Directory.Exists(resolvedPath))
+                    if (Directory.Exists(resolvedPath))
+                    {
+                        targetPath = resolvedPath;
+                        isDirectory = true;
+                        deleted = true;
+                    }
+                    else
                     {
                         _logger.LogError("Game {Name} install directory does not exist: {Path}", game.Name, resolvedPath);
-                        continue;
                     }
+                }
 
+                // ----- Executa a exclusão (Lixeira ou permanente) -----
+                if (deleted && targetPath != null)
+                {
                     try
                     {
-                        Directory.Delete(resolvedPath, true);
+                        DeleteFileOrDirectory(targetPath, isDirectory);
                         game.IsInstalled = false;
                         actuallyUninstalledGames.Add(game);
-                        _logger.LogInformation("Successfully uninstalled {Name} from {Path}", game.Name, resolvedPath);
+                        _logger.LogInformation("Successfully removed {Path}", targetPath);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to delete directory {Path} for game {Name}", resolvedPath, game.Name);
+                        _logger.LogError(ex, "Failed to remove {Path}", targetPath);
                     }
+                }
+                else
+                {
+                    _logger.LogError("Game {Name} has no valid file or folder to delete", game.Name);
                 }
             }
         }, new GlobalProgressOptions(
@@ -246,6 +295,24 @@ public class GameManagementPlugin : GenericPlugin
             true));
 
         return actuallyUninstalledGames;
+    }
+
+    #endregion
+
+    #region Settings Support
+
+    public override ISettings GetSettings(bool firstRunSettings)
+    {
+        return _settings;
+    }
+
+    public override void SetSettings(ISettings settings)
+    {
+        if (settings is GameManagementSettings gmSettings)
+        {
+            _settings = gmSettings;
+            SavePluginSettings(_settings);
+        }
     }
 
     #endregion
