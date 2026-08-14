@@ -26,11 +26,10 @@ public class GameManagementPlugin : GenericPlugin
     {
         _playniteAPI = playniteAPI;
         _logger = CustomLogger.GetLogger<GameManagementPlugin>(nameof(GameManagementPlugin));
-
-        // AssemblyLoader.ValidateReferencedAssemblies(_logger); // REMOVIDO – não necessário
-
         LoadLocalizationResources();
     }
+
+    #region Localization
 
     private void LoadLocalizationResources()
     {
@@ -79,6 +78,10 @@ public class GameManagementPlugin : GenericPlugin
         return defaultValue;
     }
 
+    #endregion
+
+    #region Menu Items
+
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
         var allPlayniteGames = args.Games?.All(g => g.Source?.Name == "Playnite") ?? false;
@@ -99,6 +102,10 @@ public class GameManagementPlugin : GenericPlugin
     {
         UninstallGames(args);
     }
+
+    #endregion
+
+    #region Uninstall Logic
 
     private List<Game> UninstallGames(GameMenuItemActionArgs args)
     {
@@ -151,41 +158,82 @@ public class GameManagementPlugin : GenericPlugin
                     GetLocalizedString("GameManagement_ProgressText", "Uninstalling {0}"),
                     game.Name);
 
-                if (game.InstallationStatus != InstallationStatus.Installed ||
-                    string.IsNullOrWhiteSpace(game.InstallDirectory))
+                bool deleted = false;
+
+                // ----- PRIORIDADE: ROM -----
+                if (!string.IsNullOrWhiteSpace(game.Rom))
                 {
-                    _logger.LogError("Game {Name} is not installed or has no install directory!", game.Name);
-                    continue;
+                    string romPath = _playniteAPI.ExpandGameVariables(game, game.Rom);
+                    try
+                    {
+                        romPath = Path.GetFullPath(romPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to resolve ROM path {Path} for game {Name}", romPath, game.Name);
+                        continue;
+                    }
+
+                    if (File.Exists(romPath))
+                    {
+                        try
+                        {
+                            File.Delete(romPath);
+                            game.IsInstalled = false;
+                            actuallyUninstalledGames.Add(game);
+                            _logger.LogInformation("Successfully deleted ROM file {Path} for {Name}", romPath, game.Name);
+                            deleted = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to delete ROM file {Path} for game {Name}", romPath, game.Name);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("ROM file {Path} does not exist for {Name}", romPath, game.Name);
+                    }
                 }
 
-                string resolvedPath = _playniteAPI.ExpandGameVariables(game, game.InstallDirectory);
+                // ----- FALLBACK: Diretório de instalação (se a ROM não foi deletada) -----
+                if (!deleted)
+                {
+                    if (game.InstallationStatus != InstallationStatus.Installed ||
+                        string.IsNullOrWhiteSpace(game.InstallDirectory))
+                    {
+                        _logger.LogError("Game {Name} is not installed or has no install directory!", game.Name);
+                        continue;
+                    }
 
-                try
-                {
-                    resolvedPath = Path.GetFullPath(resolvedPath);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to resolve path {Path} for game {Name}", resolvedPath, game.Name);
-                    continue;
-                }
+                    string resolvedPath = _playniteAPI.ExpandGameVariables(game, game.InstallDirectory);
 
-                if (!Directory.Exists(resolvedPath))
-                {
-                    _logger.LogError("Game {Name} install directory does not exist: {Path}", game.Name, resolvedPath);
-                    continue;
-                }
+                    try
+                    {
+                        resolvedPath = Path.GetFullPath(resolvedPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to resolve path {Path} for game {Name}", resolvedPath, game.Name);
+                        continue;
+                    }
 
-                try
-                {
-                    Directory.Delete(resolvedPath, true);
-                    game.IsInstalled = false;
-                    actuallyUninstalledGames.Add(game);
-                    _logger.LogInformation("Successfully uninstalled {Name} from {Path}", game.Name, resolvedPath);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to delete directory {Path} for game {Name}", resolvedPath, game.Name);
+                    if (!Directory.Exists(resolvedPath))
+                    {
+                        _logger.LogError("Game {Name} install directory does not exist: {Path}", game.Name, resolvedPath);
+                        continue;
+                    }
+
+                    try
+                    {
+                        Directory.Delete(resolvedPath, true);
+                        game.IsInstalled = false;
+                        actuallyUninstalledGames.Add(game);
+                        _logger.LogInformation("Successfully uninstalled {Name} from {Path}", game.Name, resolvedPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to delete directory {Path} for game {Name}", resolvedPath, game.Name);
+                    }
                 }
             }
         }, new GlobalProgressOptions(
@@ -194,4 +242,6 @@ public class GameManagementPlugin : GenericPlugin
 
         return actuallyUninstalledGames;
     }
+
+    #endregion
 }
