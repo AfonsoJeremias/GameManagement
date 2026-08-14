@@ -15,6 +15,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="PlayniteSDK" Version="6.16.0" />
+    </ItemGroup>
+
+    <ItemGroup>
       <ProjectReference Include="..\Extensions.Common\Extensions.Common.csproj" />
     </ItemGroup>
 
