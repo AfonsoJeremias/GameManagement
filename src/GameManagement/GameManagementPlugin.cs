@@ -161,11 +161,10 @@ public class GameManagementPlugin : GenericPlugin
                 bool deleted = false;
 
                 // ----- PRIORIDADE: ROM (primeiro caminho da coleção) -----
-                string romPath = null;
+                string? romPath = null;
                 if (game.Roms != null && game.Roms.Any())
                 {
-                    // Pega o caminho da primeira ROM (mais comum)
-                    romPath = game.Roms.First().Path;
+                    romPath = game.Roms.FirstOrDefault()?.Path;
                 }
 
                 if (!string.IsNullOrWhiteSpace(romPath))
@@ -178,7 +177,6 @@ public class GameManagementPlugin : GenericPlugin
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Failed to resolve ROM path {Path} for game {Name}", resolvedRomPath, game.Name);
-                        // Não continua, tenta fallback para InstallDirectory
                     }
 
                     if (File.Exists(resolvedRomPath))
@@ -196,7 +194,7 @@ public class GameManagementPlugin : GenericPlugin
                             _logger.LogError(ex, "Failed to delete ROM file {Path} for game {Name}", resolvedRomPath, game.Name);
                         }
                     }
-                    else if (!string.IsNullOrWhiteSpace(resolvedRomPath))
+                    else
                     {
                         _logger.LogWarning("ROM file {Path} does not exist for {Name}", resolvedRomPath, game.Name);
                     }
