@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <sys:String x:Key="GameManagement_Uninstall">Gỡ cài đặt</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationTitle">Xác nhận</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessage">Bạn có thực sự muốn gỡ cài đặt trò chơi này không?</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessages">Bạn có thực sự muốn gỡ cài đặt {0} trò chơi không?</sys:String>
+</ResourceDictionary>

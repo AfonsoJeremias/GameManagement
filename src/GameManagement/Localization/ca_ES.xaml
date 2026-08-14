@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <sys:String x:Key="GameManagement_Uninstall">Desinstal·lar</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationTitle">Confirmació</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessage">Realment voleu desinstal·lar aquest joc</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessages">Realment voleu desinstal·lar {0} joc(s)?</sys:String>
+</ResourceDictionary>

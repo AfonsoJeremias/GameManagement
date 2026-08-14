@@ -1,8 +1,8 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
-    <sys:String x:Key="GameManagement_Uninstall">Deïnstalleer</sys:String>
+    <sys:String x:Key="GameManagement_Uninstall">Deïnstalleren</sys:String>
     <sys:String x:Key="GameManagement_ConfirmationTitle">Bevestiging</sys:String>
-    <sys:String x:Key="GameManagement_ConfirmationMessage">Wil jy regtig hierdie speletjie deïnstalleer?</sys:String>
-    <sys:String x:Key="GameManagement_ConfirmationMessages">Wil jy regtig {0} speletjie(s) deïnstalleer?</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessage">Wil je deze game echt deïnstalleren?</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessages">Wil je echt {0} game(s) deïnstalleren?</sys:String>
 </ResourceDictionary>

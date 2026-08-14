@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <sys:String x:Key="GameManagement_Uninstall">Odstrani</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationTitle">Potrditev</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessage">Ali res želite odstraniti to igro?</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessages">Ali res želite odstraniti {0} iger?</sys:String>
+</ResourceDictionary>

@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <sys:String x:Key="GameManagement_Uninstall">إلغاء التثبيت</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationTitle">تأكيد</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessage">هل تريد حقًا إلغاء تثبيت هذه اللعبة؟</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessages">هل تريد حقًا إلغاء تثبيت {0} لعبة؟</sys:String>
+</ResourceDictionary>

@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <sys:String x:Key="GameManagement_Uninstall">Poista asennus</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationTitle">Vahvistus</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessage">Haluatko todella poistaa tämän pelin asennuksen?</sys:String>
+    <sys:String x:Key="GameManagement_ConfirmationMessages">Haluatko todella poistaa {0} peliä?</sys:String>
+</ResourceDictionary>
