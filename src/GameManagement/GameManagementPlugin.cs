@@ -101,7 +101,6 @@ public class GameManagementPlugin : GenericPlugin
 
     private void UninstallGameMenuAction(GameMenuItemActionArgs args)
     {
-        // Chama o método público com confirmação e progresso (comportamento original)
         UninstallGames(args);
     }
 
@@ -125,7 +124,6 @@ public class GameManagementPlugin : GenericPlugin
         if (!hasRom && !hasInstallDir)
             yield break;
 
-        // Cria um controller personalizado que usará a mesma lógica de desinstalação
         yield return new GameUninstallAction
         {
             Controller = new CustomUninstallController(game, this),
@@ -270,7 +268,7 @@ public class GameManagementPlugin : GenericPlugin
                 {
                     File.Delete(resolvedRomPath);
                     game.IsInstalled = false;
-                    _playniteAPI.Database.Games.Update(game); // Persiste a alteração
+                    _playniteAPI.Database.Games.Update(game);
                     uninstalledGame = game;
                     _logger.LogInformation("Successfully deleted ROM file {Path} for {Name}", resolvedRomPath, game.Name);
                     deleted = true;
@@ -318,7 +316,7 @@ public class GameManagementPlugin : GenericPlugin
             {
                 Directory.Delete(resolvedPath, true);
                 game.IsInstalled = false;
-                _playniteAPI.Database.Games.Update(game); // Persiste a alteração
+                _playniteAPI.Database.Games.Update(game);
                 uninstalledGame = game;
                 _logger.LogInformation("Successfully uninstalled {Name} from {Path}", game.Name, resolvedPath);
                 deleted = true;
@@ -345,10 +343,11 @@ public class GameManagementPlugin : GenericPlugin
         {
             _game = game;
             _plugin = plugin;
-            Name = "Gerenciado pelo Playnite"; // Nome exibido na UI
+            Name = "Gerenciado pelo Playnite";
         }
 
-        public override void Start(UninstallActionArgs args)
+        // Método correto para a API atual (Uninstall, não Start)
+        public override void Uninstall(UninstallActionArgs args)
         {
             try
             {
