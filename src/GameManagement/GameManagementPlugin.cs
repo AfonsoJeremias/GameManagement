@@ -80,12 +80,12 @@ public class GameManagementPlugin : GenericPlugin
 
     #endregion
 
-    #region Menu Items (Context Menu)
+    #region Menu Items
 
     public override IEnumerable<GameMenuItem> GetGameMenuItems(GetGameMenuItemsArgs args)
     {
-        var allPlayniteGames = args.Games?.All(g => g.PluginId == Guid.Empty) ?? false;
-
+        var allPlayniteGames = args.Games?.All(g => g.PluginId == Guid.Empty && g.IsInstalled) ?? false;
+        
         if (allPlayniteGames)
         {
             var uninstallText = GetLocalizedString("GameManagement_Uninstall", "Uninstall");
@@ -105,241 +105,145 @@ public class GameManagementPlugin : GenericPlugin
 
     #endregion
 
-    #region Uninstall Actions (Standard Playnite Button)
+    #region Uninstall Logic
 
-    public override IEnumerable<UninstallController> GetUninstallActions(GetUninstallActionsArgs args)
-    {
-        var game = args.Game;
-
-        if (game.PluginId != Guid.Empty)
-            yield break;
-
-        bool hasRom = game.Roms?.Any() == true;
-        bool hasInstallDir = game.InstallationStatus == InstallationStatus.Installed &&
-                             !string.IsNullOrEmpty(game.InstallDirectory);
-
-        if (!hasRom && !hasInstallDir)
-            yield break;
-
-        yield return new CustomUninstallController(game, this);
-    }
-
-    #endregion
-
-    #region Uninstall Logic Core
-
-    public List<Game> UninstallGames(GameMenuItemActionArgs args)
+    private List<Game> UninstallGames(GameMenuItemActionArgs args)
     {
         var games = args.Games;
-        if (games is null || !games.Any())
-            return new List<Game>();
+        if (games is null || !games.Any()) return new List<Game>();
 
-        return UninstallGamesCore(games, showConfirmation: true, showProgress: true);
-    }
-
-    private List<Game> UninstallGamesCore(IEnumerable<Game> games, bool showConfirmation, bool showProgress)
-    {
-        var gameList = games.ToList();
-        if (!gameList.Any())
-            return new List<Game>();
-
-        if (showConfirmation)
+        var title = GetLocalizedString("GameManagement_ConfirmationTitle", "Confirmation");
+        string message;
+        if (games.Count == 1)
         {
-            var title = GetLocalizedString("GameManagement_ConfirmationTitle", "Confirmation");
-            string message;
-            if (gameList.Count == 1)
-            {
-                message = GetLocalizedString("GameManagement_ConfirmationMessage",
-                    "Do you really want to uninstall this game?");
-            }
-            else
-            {
-                var template = GetLocalizedString("GameManagement_ConfirmationMessages",
-                    "Do you really want to uninstall these {0} games?");
-                message = string.Format(template, gameList.Count);
-            }
-
-            var result = _playniteAPI.Dialogs.ShowMessage(message, title,
-                MessageBoxButton.YesNo, MessageBoxImage.Question);
-
-            if (result != MessageBoxResult.Yes)
-                return new List<Game>();
-        }
-
-        _logger.LogInformation("Uninstalling {Count} game(s)", gameList.Count);
-
-        var actuallyUninstalledGames = new List<Game>(gameList.Count);
-
-        if (showProgress)
-        {
-            _playniteAPI.Dialogs.ActivateGlobalProgress(progressArgs =>
-            {
-                progressArgs.ProgressMaxValue = gameList.Count;
-                progressArgs.CurrentProgressValue = 0;
-
-                foreach (var game in gameList)
-                {
-                    if (progressArgs.CancelToken.IsCancellationRequested)
-                    {
-                        _logger.LogInformation("Uninstallation has been canceled");
-                        return;
-                    }
-
-                    progressArgs.CurrentProgressValue += 1;
-                    progressArgs.Text = string.Format(
-                        GetLocalizedString("GameManagement_ProgressText", "Uninstalling {0}"),
-                        game.Name);
-
-                    if (TryUninstallSingleGame(game, out var result) && result != null)
-                        actuallyUninstalledGames.Add(result);
-                }
-            }, new GlobalProgressOptions(
-                string.Format(GetLocalizedString("GameManagement_ProgressTitle", "Uninstalling {0} games"), gameList.Count),
-                true));
+            message = GetLocalizedString("GameManagement_ConfirmationMessage",
+                "Do you really want to uninstall this game?");
         }
         else
         {
-            foreach (var game in gameList)
-            {
-                if (TryUninstallSingleGame(game, out var result) && result != null)
-                    actuallyUninstalledGames.Add(result);
-            }
+            var template = GetLocalizedString("GameManagement_ConfirmationMessages",
+                "Do you really want to uninstall these {0} games?");
+            message = string.Format(template, games.Count);
         }
+
+        var result = _playniteAPI.Dialogs.ShowMessage(message, title,
+            MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            return new List<Game>();
+        }
+
+        _logger.LogInformation("Uninstalling {Count} game(s)", games.Count);
+
+        var actuallyUninstalledGames = new List<Game>(games.Count);
+
+        _playniteAPI.Dialogs.ActivateGlobalProgress(progressArgs =>
+        {
+            progressArgs.ProgressMaxValue = games.Count;
+            progressArgs.CurrentProgressValue = 0;
+
+            foreach (var game in games)
+            {
+                if (progressArgs.CancelToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("Uninstallation has been canceled");
+                    return;
+                }
+
+                _logger.LogDebug("Uninstalling {Name}", game.Name);
+
+                progressArgs.CurrentProgressValue += 1;
+                progressArgs.Text = string.Format(
+                    GetLocalizedString("GameManagement_ProgressText", "Uninstalling {0}"),
+                    game.Name);
+
+                bool deleted = false;
+
+                string? romPath = null;
+                if (game.Roms != null && game.Roms.Any())
+                {
+                    romPath = game.Roms.FirstOrDefault()?.Path;
+                }
+
+                if (!string.IsNullOrWhiteSpace(romPath))
+                {
+                    string resolvedRomPath = _playniteAPI.ExpandGameVariables(game, romPath);
+                    try
+                    {
+                        resolvedRomPath = Path.GetFullPath(resolvedRomPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to resolve ROM path {Path} for game {Name}", resolvedRomPath, game.Name);
+                    }
+
+                    if (File.Exists(resolvedRomPath))
+                    {
+                        try
+                        {
+                            File.Delete(resolvedRomPath);
+                            game.IsInstalled = false;
+                            actuallyUninstalledGames.Add(game);
+                            _logger.LogInformation("Successfully deleted ROM file {Path} for {Name}", resolvedRomPath, game.Name);
+                            deleted = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to delete ROM file {Path} for game {Name}", resolvedRomPath, game.Name);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("ROM file {Path} does not exist for {Name}", resolvedRomPath, game.Name);
+                    }
+                }
+
+                if (!deleted)
+                {
+                    if (game.InstallationStatus != InstallationStatus.Installed ||
+                        string.IsNullOrWhiteSpace(game.InstallDirectory))
+                    {
+                        _logger.LogError("Game {Name} is not installed or has no install directory!", game.Name);
+                        continue;
+                    }
+
+                    string resolvedPath = _playniteAPI.ExpandGameVariables(game, game.InstallDirectory);
+
+                    try
+                    {
+                        resolvedPath = Path.GetFullPath(resolvedPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to resolve path {Path} for game {Name}", resolvedPath, game.Name);
+                        continue;
+                    }
+
+                    if (!Directory.Exists(resolvedPath))
+                    {
+                        _logger.LogError("Game {Name} install directory does not exist: {Path}", game.Name, resolvedPath);
+                        continue;
+                    }
+
+                    try
+                    {
+                        Directory.Delete(resolvedPath, true);
+                        game.IsInstalled = false;
+                        actuallyUninstalledGames.Add(game);
+                        _logger.LogInformation("Successfully uninstalled {Name} from {Path}", game.Name, resolvedPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to delete directory {Path} for game {Name}", resolvedPath, game.Name);
+                    }
+                }
+            }
+        }, new GlobalProgressOptions(
+            string.Format(GetLocalizedString("GameManagement_ProgressTitle", "Uninstalling {0} games"), games.Count),
+            true));
 
         return actuallyUninstalledGames;
-    }
-
-    private bool TryUninstallSingleGame(Game game, out Game? uninstalledGame)
-    {
-        uninstalledGame = null;
-        _logger.LogDebug("Uninstalling {Name}", game.Name);
-
-        bool deleted = false;
-
-        string? romPath = null;
-        if (game.Roms != null && game.Roms.Any())
-        {
-            romPath = game.Roms.FirstOrDefault()?.Path;
-        }
-
-        if (!string.IsNullOrWhiteSpace(romPath))
-        {
-            string resolvedRomPath = _playniteAPI.ExpandGameVariables(game, romPath);
-            try
-            {
-                resolvedRomPath = Path.GetFullPath(resolvedRomPath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to resolve ROM path {Path} for game {Name}", resolvedRomPath, game.Name);
-            }
-
-            if (File.Exists(resolvedRomPath))
-            {
-                try
-                {
-                    File.Delete(resolvedRomPath);
-                    game.IsInstalled = false;
-                    _playniteAPI.Database.Games.Update(game);
-                    uninstalledGame = game;
-                    _logger.LogInformation("Successfully deleted ROM file {Path} for {Name}", resolvedRomPath, game.Name);
-                    deleted = true;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to delete ROM file {Path} for game {Name}", resolvedRomPath, game.Name);
-                }
-            }
-            else
-            {
-                _logger.LogWarning("ROM file {Path} does not exist for {Name}", resolvedRomPath, game.Name);
-            }
-        }
-
-        if (!deleted)
-        {
-            if (game.InstallationStatus != InstallationStatus.Installed ||
-                string.IsNullOrWhiteSpace(game.InstallDirectory))
-            {
-                _logger.LogError("Game {Name} is not installed or has no install directory!", game.Name);
-                return false;
-            }
-
-            string resolvedPath = _playniteAPI.ExpandGameVariables(game, game.InstallDirectory);
-
-            try
-            {
-                resolvedPath = Path.GetFullPath(resolvedPath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to resolve path {Path} for game {Name}", resolvedPath, game.Name);
-                return false;
-            }
-
-            if (!Directory.Exists(resolvedPath))
-            {
-                _logger.LogError("Game {Name} install directory does not exist: {Path}", game.Name, resolvedPath);
-                return false;
-            }
-
-            try
-            {
-                Directory.Delete(resolvedPath, true);
-                game.IsInstalled = false;
-                _playniteAPI.Database.Games.Update(game);
-                uninstalledGame = game;
-                _logger.LogInformation("Successfully uninstalled {Name} from {Path}", game.Name, resolvedPath);
-                deleted = true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to delete directory {Path} for game {Name}", resolvedPath, game.Name);
-            }
-        }
-
-        return deleted;
-    }
-
-    #endregion
-
-    #region Custom Uninstall Controller
-
-    private class CustomUninstallController : UninstallController
-    {
-        private readonly Game _game;
-        private readonly GameManagementPlugin _plugin;
-
-        public CustomUninstallController(Game game, GameManagementPlugin plugin) : base(game)
-        {
-            _game = game;
-            _plugin = plugin;
-            Name = "Gerenciado pelo Playnite";
-        }
-
-        public override void Uninstall(UninstallActionArgs args)
-        {
-            try
-            {
-                var result = _plugin.UninstallGamesCore(new[] { _game }, showConfirmation: false, showProgress: false);
-
-                if (result.Contains(_game))
-                {
-                    // Sinaliza sucesso
-                    InvokeOnUninstalled();
-                }
-                else
-                {
-                    // Lança exceção para sinalizar falha
-                    throw new Exception("A desinstalação falhou ou foi cancelada.");
-                }
-            }
-            catch (Exception)
-            {
-                // Relança para o Playnite tratar como erro
-                throw;
-            }
-        }
     }
 
     #endregion
