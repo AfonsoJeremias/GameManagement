@@ -15,10 +15,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Reference Include="Microsoft.VisualBasic" />
-    </ItemGroup>
-
-    <ItemGroup>
       <ProjectReference Include="..\Extensions.Common\Extensions.Common.csproj" />
     </ItemGroup>
 
