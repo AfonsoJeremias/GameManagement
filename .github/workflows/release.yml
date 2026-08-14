@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: write  # necessário para criar a release
+      contents: write
 
     env:
       PROJECT: src/GameManagement/GameManagement.csproj
@@ -56,14 +56,14 @@ jobs:
     - name: Change Version (update manifests)
       run: python scripts/build.py update ${{ steps.tag_name.outputs.current_version }}
 
-    - name: Install Playnite Toolbox
-      run: dotnet tool install --global Playnite.Toolbox
-
-    - name: Pack Extension
+    - name: Pack Extension (via Python script)
       shell: bash
       run: |
         mkdir -p out
-        toolbox pack --input "src/GameManagement/bin/Debug/net462/" --output "out/" --name "GameManagement_${{ steps.tag_name.outputs.current_version }}.pext"
+        python scripts/build.py pack out
+        # Renomeia o .pext gerado para incluir a versão
+        # Assume que o script gera "GameManagement.pext"
+        mv out/GameManagement.pext out/GameManagement_${{ steps.tag_name.outputs.current_version }}.pext
 
     - name: Create Release
       id: create_release
