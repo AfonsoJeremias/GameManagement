@@ -310,7 +310,6 @@ public class GameManagementPlugin : GenericPlugin
         private readonly Game _game;
         private readonly GameManagementPlugin _plugin;
 
-        // CORREÇÃO: chamar o construtor base passando o game
         public CustomUninstallController(Game game, GameManagementPlugin plugin) : base(game)
         {
             _game = game;
@@ -326,18 +325,18 @@ public class GameManagementPlugin : GenericPlugin
 
                 if (result.Contains(_game))
                 {
-                    // CORREÇÃO: usar InvokeOnUninstalled() em vez de Finish(null)
-                    InvokeOnUninstalled();
+                    // CORREÇÃO: usar Finish() para sucesso
+                    Finish();
                 }
                 else
                 {
-                    // CORREÇÃO: usar InvokeOnFailed(Exception) em vez de Finish(Exception)
-                    InvokeOnFailed(new Exception("A desinstalação falhou ou foi cancelada."));
+                    // CORREÇÃO: usar Finish(Exception) para erro
+                    Finish(new Exception("A desinstalação falhou ou foi cancelada."));
                 }
             }
             catch (Exception ex)
             {
-                InvokeOnFailed(ex);
+                Finish(ex);
             }
         }
     }
