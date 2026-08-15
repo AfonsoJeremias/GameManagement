@@ -1,0 +1,10 @@
+AddonId: "a37e0963-91ac-4432-be2a-69e366c44726"
+Packages:
+  - Version: 2.6.0
+    RequiredApiVersion: 6.13.0
+    ReleaseDate: 2026-08-14
+    PackageUrl: https://github.com/AfonsoJeremias/GameManagement/releases/download/v2.6.0/GameManagement_2_6_0.pext
+    Changelog:
+      - Initial release
+      - Smarter uninstall with ROM priority
+      - Only shows for installed games
