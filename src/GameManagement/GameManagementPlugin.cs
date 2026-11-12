@@ -319,7 +319,9 @@ public class GameManagementPlugin : GenericPlugin
             };
         }
 
-        var actionToDelete = actionsByOption[selected];
+        if (string.IsNullOrEmpty(selected) || !actionsByOption.TryGetValue(selected, out var actionToDelete))
+            return null;
+
         var folderToDelete = GetFolderToDeleteFromAction(game, actionToDelete);
         if (folderToDelete == null) return null;
 
@@ -636,12 +638,8 @@ public class GameManagementPlugin : GenericPlugin
 
                 if (toSelect.HasValue)
                 {
-                    var gameToSelect = _playniteAPI.Database.Games.Get(toSelect.Value);
-                    if (gameToSelect != null)
-                    {
-                        _playniteAPI.MainView.SelectGame(gameToSelect);
-                        _logger.LogInformation("Auto-selected next game after uninstall");
-                    }
+                    _playniteAPI.MainView.SelectGame(toSelect.Value);
+                    _logger.LogInformation("Auto-selected next game after uninstall");
                 }
             }
             catch (Exception ex)
