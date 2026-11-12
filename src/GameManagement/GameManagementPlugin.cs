@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using Extensions.Common;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
@@ -108,6 +109,21 @@ public class GameManagementPlugin : GenericPlugin
 
     #region Uninstall Logic
 
+    private class UninstallPlan
+    {
+        public Game Game = null!;
+        public UninstallTargetType TargetType;
+        public string TargetPath = "";
+        public GameAction? ActionToRemove;
+    }
+
+    private enum UninstallTargetType
+    {
+        InstallDirectory,
+        ActionFolder,
+        Rom
+    }
+
     private List<Game> UninstallGames(GameMenuItemActionArgs args)
     {
         var games = args.Games;
@@ -117,7 +133,7 @@ public class GameManagementPlugin : GenericPlugin
         var previousSelectedId = _playniteAPI.MainView.SelectedGames?.FirstOrDefault()?.Id;
         var filteredSnapshot = _playniteAPI.MainView.FilteredGames?.Select(g => g.Id).ToList() ?? new List<Guid>();
 
-        // Confirmação
+        // Confirmação inicial
         var title = GetLocalizedString("GameManagement_ConfirmationTitle", "Confirmation");
         string message;
         if (games.Count == 1)
@@ -139,15 +155,37 @@ public class GameManagementPlugin : GenericPlugin
 
         _logger.LogInformation("Uninstalling {Count} game(s)", games.Count);
 
-        var actuallyUninstalledGames = new List<Game>(games.Count);
-        var updatedGames = new List<Game>(games.Count);
+        // FASE 1: recolher decisões (diálogos na UI thread)
+        var plans = new List<UninstallPlan>();
+        foreach (var game in games)
+        {
+            try
+            {
+                var plan = BuildUninstallPlan(game);
+                if (plan != null) plans.Add(plan);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to build uninstall plan for {Name}", game.Name);
+            }
+        }
+
+        if (plans.Count == 0)
+        {
+            _logger.LogInformation("No uninstall plans to execute");
+            return new List<Game>();
+        }
+
+        // FASE 2: executar eliminações (background, sem diálogos)
+        var actuallyUninstalledGames = new List<Game>();
+        var updatedGames = new List<Game>(plans.Count);
 
         _playniteAPI.Dialogs.ActivateGlobalProgress(progressArgs =>
         {
-            progressArgs.ProgressMaxValue = games.Count;
+            progressArgs.ProgressMaxValue = plans.Count;
             progressArgs.CurrentProgressValue = 0;
 
-            foreach (var game in games)
+            foreach (var plan in plans)
             {
                 if (progressArgs.CancelToken.IsCancellationRequested)
                 {
@@ -158,42 +196,40 @@ public class GameManagementPlugin : GenericPlugin
                 progressArgs.CurrentProgressValue += 1;
                 progressArgs.Text = string.Format(
                     GetLocalizedString("GameManagement_ProgressText", "Uninstalling {0}"),
-                    game.Name);
+                    plan.Game.Name);
 
-                bool fullyUninstalled = UninstallSingleGame(game, progressArgs.CancelToken);
-                if (fullyUninstalled)
-                    actuallyUninstalledGames.Add(game);
-
-                updatedGames.Add(game);
+                bool fullyUninstalled = ExecutePlan(plan);
+                if (fullyUninstalled) actuallyUninstalledGames.Add(plan.Game);
+                updatedGames.Add(plan.Game);
             }
         }, new GlobalProgressOptions(
-            string.Format(GetLocalizedString("GameManagement_ProgressTitle", "Uninstalling {0} games"), games.Count),
+            string.Format(GetLocalizedString("GameManagement_ProgressTitle", "Uninstalling {0} games"), plans.Count),
             true));
 
-        // Persistir alterações (ações removidas / IsInstalled alterado)
+        // FASE 3: persistir alterações
         if (updatedGames.Count > 0)
         {
             _playniteAPI.Database.Games.Update(updatedGames);
             _logger.LogInformation("Updated {Count} game(s) in database", updatedGames.Count);
         }
 
-        // Chamar Installation Status Updater se houve desinstalação completa
+        // FASE 4: trigger ISU se houve desinstalação completa
         if (actuallyUninstalledGames.Count > 0)
         {
             TriggerInstallationStatusUpdater();
         }
 
-        // Auto-selecionar próximo jogo depois que o Playnite atualizar a UI
+        // FASE 5: auto-selecionar próximo jogo
         AutoSelectNextGame(previousSelectedId, filteredSnapshot);
 
         return actuallyUninstalledGames;
     }
 
     /// <summary>
-    /// Desinstala um jogo individualmente. Retorna true se o jogo foi
-    /// completamente desinstalado (InstallDirectory removido ou ROM principal apagada).
+    /// Constrói o plano de desinstalação, mostrando diálogos conforme necessário.
+    /// Chamado na UI thread (antes do ActivateGlobalProgress).
     /// </summary>
-    private bool UninstallSingleGame(Game game, CancellationToken cancelToken)
+    private UninstallPlan? BuildUninstallPlan(Game game)
     {
         // Resolver InstallDirectory
         string? installDir = null;
@@ -212,7 +248,7 @@ public class GameManagementPlugin : GenericPlugin
             }
         }
 
-        // Construir opções de eliminação
+        // Construir opções
         var options = new List<string>();
         var actionsByOption = new Dictionary<string, GameAction>();
         string? uninstallOption = null;
@@ -226,13 +262,11 @@ public class GameManagementPlugin : GenericPlugin
             options.Add(uninstallOption);
         }
 
-        var actions = game.GameActions?.ToList() ?? new List<GameAction>();
-        foreach (var action in actions)
+        foreach (var action in game.GameActions?.ToList() ?? new List<GameAction>())
         {
             var folder = GetFolderToDeleteFromAction(game, action);
             if (folder == null) continue;
 
-            // Se a pasta da ação == InstallDirectory, é já a opção "full uninstall"
             if (installDir != null && string.Equals(folder, installDir, StringComparison.OrdinalIgnoreCase))
                 continue;
 
@@ -246,13 +280,14 @@ public class GameManagementPlugin : GenericPlugin
             actionsByOption[label] = action;
         }
 
-        // Sem opções → tentar apagar a ROM (comportamento antigo)
+        // Sem opções → tentar ROM
         if (options.Count == 0)
         {
-            return TryDeleteRomFile(game);
+            return BuildRomPlan(game);
         }
 
-        // Só uma opção → confirmar directamente
+        // Determinar escolha
+        string? selected;
         if (options.Count == 1)
         {
             var confirm = _playniteAPI.Dialogs.ShowMessage(
@@ -260,44 +295,112 @@ public class GameManagementPlugin : GenericPlugin
                     "Delete the following target for '{0}'?\n\n{1}"), game.Name, options[0]),
                 GetLocalizedString("GameManagement_ConfirmationTitle", "Confirmation"),
                 MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (confirm != MessageBoxResult.Yes) return false;
-        }
-
-        // Escolher opção
-        string? selected;
-        if (options.Count == 1)
-        {
+            if (confirm != MessageBoxResult.Yes) return null;
             selected = options[0];
         }
         else
         {
-            selected = _playniteAPI.Dialogs.SelectString(
+            selected = ShowSelectionDialog(
+                GetLocalizedString("GameManagement_SelectTargetTitle", "Select what to delete"),
                 string.Format(GetLocalizedString("GameManagement_SelectTarget",
                     "Choose which element of '{0}' to delete:"), game.Name),
-                GetLocalizedString("GameManagement_SelectTargetTitle", "Select what to delete"),
                 options);
+            if (string.IsNullOrEmpty(selected)) return null;
         }
 
-        if (string.IsNullOrEmpty(selected) || cancelToken.IsCancellationRequested) return false;
-
-        // Executar
+        // Montar plano
         if (selected == uninstallOption)
         {
-            return DeleteInstallDirectory(game, installDir!);
+            return new UninstallPlan
+            {
+                Game = game,
+                TargetType = UninstallTargetType.InstallDirectory,
+                TargetPath = installDir!
+            };
         }
 
-        if (actionsByOption.TryGetValue(selected, out var actionToDelete))
+        var actionToDelete = actionsByOption[selected];
+        var folderToDelete = GetFolderToDeleteFromAction(game, actionToDelete);
+        if (folderToDelete == null) return null;
+
+        return new UninstallPlan
         {
-            return DeleteActionFolder(game, actionToDelete);
-        }
+            Game = game,
+            TargetType = UninstallTargetType.ActionFolder,
+            TargetPath = folderToDelete,
+            ActionToRemove = actionToDelete
+        };
+    }
 
+    private UninstallPlan? BuildRomPlan(Game game)
+    {
+        var romPath = game.Roms?.FirstOrDefault()?.Path;
+        if (string.IsNullOrWhiteSpace(romPath)) return null;
+
+        try
+        {
+            var expanded = _playniteAPI.ExpandGameVariables(game, romPath);
+            var full = Path.GetFullPath(expanded);
+            if (!File.Exists(full)) return null;
+
+            return new UninstallPlan
+            {
+                Game = game,
+                TargetType = UninstallTargetType.Rom,
+                TargetPath = full
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve ROM for {Name}", game.Name);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Executa o plano (na thread de background, sem diálogos).
+    /// Retorna true se o jogo foi completamente desinstalado.
+    /// </summary>
+    private bool ExecutePlan(UninstallPlan plan)
+    {
+        try
+        {
+            switch (plan.TargetType)
+            {
+                case UninstallTargetType.InstallDirectory:
+                    Directory.Delete(plan.TargetPath, true);
+                    plan.Game.IsInstalled = false;
+                    _logger.LogInformation("Uninstalled {Name} from {Path}", plan.Game.Name, plan.TargetPath);
+                    return true;
+
+                case UninstallTargetType.ActionFolder:
+                    if (!string.IsNullOrEmpty(plan.TargetPath) && Directory.Exists(plan.TargetPath))
+                        Directory.Delete(plan.TargetPath, true);
+
+                    if (plan.ActionToRemove != null && plan.Game.GameActions != null)
+                        plan.Game.GameActions.Remove(plan.ActionToRemove);
+
+                    _logger.LogInformation("Deleted action folder {Folder} for {Name}",
+                        plan.TargetPath, plan.Game.Name);
+                    return false; // NÃO marca como desinstalado
+
+                case UninstallTargetType.Rom:
+                    File.Delete(plan.TargetPath);
+                    plan.Game.IsInstalled = false;
+                    _logger.LogInformation("Deleted ROM {Path} for {Name}", plan.TargetPath, plan.Game.Name);
+                    return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute uninstall plan for {Name}", plan.Game.Name);
+        }
         return false;
     }
 
     /// <summary>
-    /// Determina a "última pasta" da acção: se a acção aponta para
-    /// {InstallDir}\Sonic Project Hero\Sonic - Project Hero.exe,
-    /// devolve {InstallDir}\Sonic Project Hero
+    /// Devolve a "última pasta" da ação:
+    /// {InstallDir}\Sonic Project Hero\Sonic - Project Hero.exe → {InstallDir}\Sonic Project Hero
     /// </summary>
     private string? GetFolderToDeleteFromAction(Game game, GameAction action)
     {
@@ -312,7 +415,7 @@ public class GameManagementPlugin : GenericPlugin
             var fullPath = Path.GetFullPath(expanded);
 
             if (File.Exists(fullPath))
-                return Path.GetDirectoryName(fullPath);  // ← última pasta do ficheiro
+                return Path.GetDirectoryName(fullPath);
 
             if (Directory.Exists(fullPath))
                 return fullPath;
@@ -326,95 +429,109 @@ public class GameManagementPlugin : GenericPlugin
     }
 
     /// <summary>
-    /// Apaga a subpasta de uma acção específica. A acção é removida
-    /// (desativada) mas o jogo NÃO é marcado como desinstalado.
+    /// Diálogo de seleção customizado (WPF), usado porque esta versão do SDK
+    /// não tem a sobrecarga SelectString(message, caption, IEnumerable&lt;string&gt;).
     /// </summary>
-    private bool DeleteActionFolder(Game game, GameAction action)
+    private string? ShowSelectionDialog(string title, string message, List<string> options)
     {
-        var folder = GetFolderToDeleteFromAction(game, action);
-        if (folder == null) return false;
+        var app = Application.Current;
+        if (app?.Dispatcher == null) return null;
 
-        try
+        string? result = null;
+
+        app.Dispatcher.Invoke(() =>
         {
-            Directory.Delete(folder, true);
-            _logger.LogInformation("Deleted action folder {Folder} for {Game}", folder, game.Name);
-
-            // Desativar a acção (remover da lista)
-            game.GameActions.Remove(action);
-            _logger.LogInformation("Removed/disabled action '{Action}' from {Game}",
-                action.Name, game.Name);
-
-            return false;  // NÃO marcar jogo como desinstalado
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete action folder {Folder} for {Game}", folder, game.Name);
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Apaga o InstallDirectory principal. Marca o jogo como desinstalado.
-    /// </summary>
-    private bool DeleteInstallDirectory(Game game, string installDir)
-    {
-        try
-        {
-            Directory.Delete(installDir, true);
-            game.IsInstalled = false;
-            _logger.LogInformation("Successfully uninstalled {Name} from {Path}", game.Name, installDir);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete directory {Path} for {Name}", installDir, game.Name);
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Fallback para jogos sem InstallDirectory nem acções: apaga o ficheiro ROM.
-    /// </summary>
-    private bool TryDeleteRomFile(Game game)
-    {
-        var romPath = game.Roms?.FirstOrDefault()?.Path;
-        if (string.IsNullOrWhiteSpace(romPath)) return false;
-
-        try
-        {
-            var expanded = _playniteAPI.ExpandGameVariables(game, romPath);
-            expanded = Path.GetFullPath(expanded);
-
-            if (!File.Exists(expanded))
+            var window = new Window
             {
-                _logger.LogWarning("ROM file {Path} not found for {Game}", expanded, game.Name);
-                return false;
-            }
+                Title = title,
+                Width = 620,
+                Height = 420,
+                WindowStartupLocation = app.MainWindow != null
+                    ? WindowStartupLocation.CenterOwner
+                    : WindowStartupLocation.CenterScreen,
+                Owner = app.MainWindow,
+                ResizeMode = ResizeMode.CanResize,
+                ShowInTaskbar = false
+            };
 
-            File.Delete(expanded);
-            game.IsInstalled = false;
-            _logger.LogInformation("Deleted ROM file {Path} for {Game}", expanded, game.Name);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete ROM file for {Game}", game.Name);
-            return false;
-        }
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var textBlock = new TextBlock
+            {
+                Text = message,
+                Margin = new Thickness(10),
+                TextWrapping = TextWrapping.Wrap
+            };
+            Grid.SetRow(textBlock, 0);
+            grid.Children.Add(textBlock);
+
+            var listBox = new ListBox { Margin = new Thickness(10) };
+            foreach (var opt in options) listBox.Items.Add(opt);
+            listBox.SelectedIndex = 0;
+            Grid.SetRow(listBox, 1);
+            grid.Children.Add(listBox);
+
+            var buttonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(10)
+            };
+
+            var okButton = new Button
+            {
+                Content = "OK",
+                Width = 90,
+                Margin = new Thickness(5),
+                IsDefault = true
+            };
+            var cancelButton = new Button
+            {
+                Content = "Cancel",
+                Width = 90,
+                Margin = new Thickness(5),
+                IsCancel = true
+            };
+            buttonPanel.Children.Add(okButton);
+            buttonPanel.Children.Add(cancelButton);
+            Grid.SetRow(buttonPanel, 2);
+            grid.Children.Add(buttonPanel);
+
+            window.Content = grid;
+
+            okButton.Click += (s, e) =>
+            {
+                result = listBox.SelectedItem as string;
+                window.Close();
+            };
+            cancelButton.Click += (s, e) => window.Close();
+
+            window.ShowDialog();
+        });
+
+        return result;
     }
 
     /// <summary>
     /// Tenta chamar o método "verificar estado de instalação de todos os jogos"
     /// do plugin Installation Status Updater (darklinkpower). Usa reflexão porque
-    /// o nome do método pode variar entre versões.
+    /// o nome do método varia entre versões.
     /// </summary>
     private void TriggerInstallationStatusUpdater()
     {
         try
         {
             var isu = _playniteAPI.Addons?.Plugins?.FirstOrDefault(p =>
-                p.GetType().Name.Contains("InstallationStatusUpdater", StringComparison.OrdinalIgnoreCase)
-                || (p.Name?.Contains("Installation Status", StringComparison.OrdinalIgnoreCase) == true));
+            {
+                var typeName = p.GetType().Name ?? string.Empty;
+                var assemblyName = p.GetType().Assembly.GetName().Name ?? string.Empty;
+
+                return typeName.IndexOf("InstallationStatusUpdater", StringComparison.OrdinalIgnoreCase) >= 0
+                    || assemblyName.IndexOf("InstallationStatusUpdater", StringComparison.OrdinalIgnoreCase) >= 0;
+            });
 
             if (isu == null)
             {
@@ -427,7 +544,8 @@ public class GameManagementPlugin : GenericPlugin
             var type = isu.GetType();
             var candidates = new[]
             {
-                "UpdateAllGames", "CheckAllGames", "UpdateAll", "CheckAll",
+                "UpdateAllGames", "UpdateStatusAllGames", "UpdateAllGamesStatus",
+                "CheckAllGames", "UpdateAll", "CheckAll",
                 "UpdateInstallationStatusAllGames", "UpdateAllInstallationStatuses",
                 "UpdateInstallationStatus", "CheckInstallationStatus",
             };
@@ -446,7 +564,10 @@ public class GameManagementPlugin : GenericPlugin
                         return;
                     }
                 }
-                catch { /* tentar o próximo */ }
+                catch
+                {
+                    // tentar próximo
+                }
             }
 
             _logger.LogWarning("No suitable update method found on Installation Status Updater");
@@ -458,12 +579,12 @@ public class GameManagementPlugin : GenericPlugin
     }
 
     /// <summary>
-    /// Depois que o Playnite atualizar a lista de jogos, seleciona o "próximo"
-    /// jogo (na ordem em que estava antes) que ainda esteja instalado.
+    /// Depois que o Playnite atualizar a lista, seleciona o "próximo"
+    /// jogo instalado na mesma ordem em que estava filtrado.
     /// </summary>
     private void AutoSelectNextGame(Guid? previousSelectedId, List<Guid> filteredSnapshot)
     {
-        var app = System.Windows.Application.Current;
+        var app = Application.Current;
         if (app?.Dispatcher == null) return;
 
         var timer = new System.Windows.Threading.DispatcherTimer
@@ -489,7 +610,6 @@ public class GameManagementPlugin : GenericPlugin
                     var idx = filteredSnapshot.IndexOf(previousSelectedId.Value);
                     if (idx >= 0)
                     {
-                        // procurar em frente
                         for (int i = idx + 1; i < filteredSnapshot.Count; i++)
                         {
                             if (installedIds.Contains(filteredSnapshot[i]))
@@ -498,7 +618,6 @@ public class GameManagementPlugin : GenericPlugin
                                 break;
                             }
                         }
-                        // se não houver, procurar para trás
                         if (!toSelect.HasValue)
                         {
                             for (int i = idx - 1; i >= 0; i--)
@@ -517,8 +636,12 @@ public class GameManagementPlugin : GenericPlugin
 
                 if (toSelect.HasValue)
                 {
-                    _playniteAPI.MainView.SelectGame(toSelect.Value);
-                    _logger.LogInformation("Auto-selected next game after uninstall");
+                    var gameToSelect = _playniteAPI.Database.Games.Get(toSelect.Value);
+                    if (gameToSelect != null)
+                    {
+                        _playniteAPI.MainView.SelectGame(gameToSelect);
+                        _logger.LogInformation("Auto-selected next game after uninstall");
+                    }
                 }
             }
             catch (Exception ex)
