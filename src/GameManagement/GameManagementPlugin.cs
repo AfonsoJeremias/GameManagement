@@ -295,7 +295,9 @@ public class GameManagementPlugin : GenericPlugin
                 string.Format(GetLocalizedString("GameManagement_SelectTarget",
                     "Choose which element of '{0}' to delete:"), game.Name),
                 options);
-            if (string.IsNullOrEmpty(selected)) return null;
+
+            if (string.IsNullOrEmpty(selected))
+                return null;
         }
 
         if (selected == uninstallOption)
@@ -308,7 +310,10 @@ public class GameManagementPlugin : GenericPlugin
             };
         }
 
-        if (string.IsNullOrEmpty(selected) || !actionsByOption.TryGetValue(selected, out var actionToDelete))
+        if (string.IsNullOrEmpty(selected))
+            return null;
+
+        if (!actionsByOption.TryGetValue(selected!, out var actionToDelete))
             return null;
 
         var folderToDelete = GetFolderToDeleteFromAction(game, actionToDelete);
