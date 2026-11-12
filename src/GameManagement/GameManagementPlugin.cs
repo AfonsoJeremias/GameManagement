@@ -129,11 +129,9 @@ public class GameManagementPlugin : GenericPlugin
         var games = args.Games;
         if (games is null || !games.Any()) return new List<Game>();
 
-        // Capturar a seleção atual ANTES de apagar (para auto-seleção)
         var previousSelectedId = _playniteAPI.MainView.SelectedGames?.FirstOrDefault()?.Id;
         var filteredSnapshot = _playniteAPI.MainView.FilteredGames?.Select(g => g.Id).ToList() ?? new List<Guid>();
 
-        // Confirmação inicial
         var title = GetLocalizedString("GameManagement_ConfirmationTitle", "Confirmation");
         string message;
         if (games.Count == 1)
@@ -225,13 +223,8 @@ public class GameManagementPlugin : GenericPlugin
         return actuallyUninstalledGames;
     }
 
-    /// <summary>
-    /// Constrói o plano de desinstalação, mostrando diálogos conforme necessário.
-    /// Chamado na UI thread (antes do ActivateGlobalProgress).
-    /// </summary>
     private UninstallPlan? BuildUninstallPlan(Game game)
     {
-        // Resolver InstallDirectory
         string? installDir = null;
         if (game.InstallationStatus == InstallationStatus.Installed
             && !string.IsNullOrWhiteSpace(game.InstallDirectory))
@@ -248,7 +241,6 @@ public class GameManagementPlugin : GenericPlugin
             }
         }
 
-        // Construir opções
         var options = new List<string>();
         var actionsByOption = new Dictionary<string, GameAction>();
         string? uninstallOption = null;
@@ -280,13 +272,11 @@ public class GameManagementPlugin : GenericPlugin
             actionsByOption[label] = action;
         }
 
-        // Sem opções → tentar ROM
         if (options.Count == 0)
         {
             return BuildRomPlan(game);
         }
 
-        // Determinar escolha
         string? selected;
         if (options.Count == 1)
         {
@@ -308,7 +298,6 @@ public class GameManagementPlugin : GenericPlugin
             if (string.IsNullOrEmpty(selected)) return null;
         }
 
-        // Montar plano
         if (selected == uninstallOption)
         {
             return new UninstallPlan
@@ -359,10 +348,6 @@ public class GameManagementPlugin : GenericPlugin
         }
     }
 
-    /// <summary>
-    /// Executa o plano (na thread de background, sem diálogos).
-    /// Retorna true se o jogo foi completamente desinstalado.
-    /// </summary>
     private bool ExecutePlan(UninstallPlan plan)
     {
         try
@@ -384,7 +369,7 @@ public class GameManagementPlugin : GenericPlugin
 
                     _logger.LogInformation("Deleted action folder {Folder} for {Name}",
                         plan.TargetPath, plan.Game.Name);
-                    return false; // NÃO marca como desinstalado
+                    return false;
 
                 case UninstallTargetType.Rom:
                     File.Delete(plan.TargetPath);
@@ -400,10 +385,6 @@ public class GameManagementPlugin : GenericPlugin
         return false;
     }
 
-    /// <summary>
-    /// Devolve a "última pasta" da ação:
-    /// {InstallDir}\Sonic Project Hero\Sonic - Project Hero.exe → {InstallDir}\Sonic Project Hero
-    /// </summary>
     private string? GetFolderToDeleteFromAction(Game game, GameAction action)
     {
         if (action.Type != GameActionType.File) return null;
@@ -430,10 +411,6 @@ public class GameManagementPlugin : GenericPlugin
         return null;
     }
 
-    /// <summary>
-    /// Diálogo de seleção customizado (WPF), usado porque esta versão do SDK
-    /// não tem a sobrecarga SelectString(message, caption, IEnumerable&lt;string&gt;).
-    /// </summary>
     private string? ShowSelectionDialog(string title, string message, List<string> options)
     {
         var app = Application.Current;
@@ -517,11 +494,6 @@ public class GameManagementPlugin : GenericPlugin
         return result;
     }
 
-    /// <summary>
-    /// Tenta chamar o método "verificar estado de instalação de todos os jogos"
-    /// do plugin Installation Status Updater (darklinkpower). Usa reflexão porque
-    /// o nome do método varia entre versões.
-    /// </summary>
     private void TriggerInstallationStatusUpdater()
     {
         try
@@ -568,7 +540,6 @@ public class GameManagementPlugin : GenericPlugin
                 }
                 catch
                 {
-                    // tentar próximo
                 }
             }
 
@@ -580,10 +551,6 @@ public class GameManagementPlugin : GenericPlugin
         }
     }
 
-    /// <summary>
-    /// Depois que o Playnite atualizar a lista, seleciona o "próximo"
-    /// jogo instalado na mesma ordem em que estava filtrado.
-    /// </summary>
     private void AutoSelectNextGame(Guid? previousSelectedId, List<Guid> filteredSnapshot)
     {
         var app = Application.Current;
